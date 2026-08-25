@@ -1,1 +1,6 @@
-{"version":"2.2","versionCode":5,"notes":"①清空全部数据时甲方乙方名称一并清除 ②修复打印：支持连接打印机打印","apk":"duizhang-2.2.apk"}
+{
+  "version": "2.3",
+  "versionCode": 6,
+  "notes": "新增：页面内容在线同步——电脑上改完 HTML 推上去，手机打开 App 即新版，无需重新安装；优化更新检查速度（CDN 优先）",
+  "apk": "duizhang-2.3.apk"
+}
