@@ -1,6 +1,1 @@
-{
-  "version": "2.1",
-  "versionCode": 4,
-  "notes": "新增远程更新：打开 App 自动检查新版本",
-  "apk": "duizhang-2.1.apk"
-}
+{"version":"2.2","versionCode":5,"notes":"①清空全部数据时甲方乙方名称一并清除 ②修复打印：支持连接打印机打印","apk":"duizhang-2.2.apk"}
