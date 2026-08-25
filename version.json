@@ -1,6 +1,6 @@
 ﻿{
-  "version": "2.0",
-  "versionCode": 3,
-  "notes": "空白版：全新安装从零开始录入",
-  "apk": "duizhang-2.0.apk"
+  "version": "2.1",
+  "versionCode": 4,
+  "notes": "新增远程更新：打开 App 自动检查新版本",
+  "apk": "duizhang-2.1.apk"
 }
