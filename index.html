@@ -247,7 +247,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.16';
+const APP_VERSION = 'v2.17';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1067,7 +1067,9 @@ function parseDetailSheet(grid, headerRow, idx){
     //    或小计列有值但本行无数量单价金额（如残留行「0:'44' 6:'720'」）。
     //    注意「2023年加工费」这类付款标记行不被 ^\d{4}年 拦（只拦纯「2023年」或「2023年货款/总账/…止」）
     const isLabel = /小计|小结|总计|一共|共计|汇总|累计|总付款|总退货|止$|^\d{1,2}月$|^\d{4}年$|^\d{4}年(货款|总账|小计|合计|止|余额|底)/.test(amtRaw + '|' + price + '|' + qty + '|' + dateRaw + '|' + name);
-    if(isLabel || (subVal && !qty && !price && amtNum == null)) continue;
+    // 金额列为日期/月份标记（如「26.1.20」「2025.1」）且无数量单价 → 汇总行（小计写在付款/余额列）；真实金额行都有数量/单价，不会误伤
+    const amtIsDateLabel = amtRaw && !qty && !price && /^\d{1,4}[./]\d{1,2}([./]\d{1,2})?$/.test(amtRaw);
+    if(isLabel || amtIsDateLabel || (subVal && !qty && !price && amtNum == null)) continue;
     // ③.5 日期列为纯中文文字标签（如汇总行「0:'退货' 1:'37' 5:'91130'」）→ 跳过
     if(dateRaw && !/\d/.test(dateRaw) && /[\u4e00-\u9fa5]/.test(dateRaw)) continue;
     // ④ 退货行：名称/备注/金额列含「退货/退款」（金额可取自金额列或付款列，缺省 qty×price）
@@ -1162,6 +1164,77 @@ function parsePaymentsSheet(grid, headerRow, idx){
   }
   return rows;
 }
+// 总账表（classifySheet='summary'）解析：提取 期初 + 付款 + 退货 + 税金货款。
+// 总账里的月度汇总货款行（如「2025.1月 | 13095」）与明细表逐笔重复 → 忽略；
+// 总账独有的「税金」行（金额列有值、名称含税金）是应收的一部分 → 计为货款。
+// 注：总账表头常无名称列名（index 1 为空），名称列取日期列后一列。
+function parseSummarySheet(grid, headerRow, idx){
+  const start = gridIndexOf(grid, headerRow) + 1;
+  const goods = [], payments = [], returns = [];
+  let lastDate = '';
+  let opening = null, openingNote = '';
+  let ending = null; // 总账余额列最后一个非空值 = 源表期末
+  let nameCol = idx.name;
+  if(nameCol == null && idx.date != null) nameCol = idx.date + 1; // 总账名称列无表头名
+  for(let r = start; r < grid.length; r++){
+    const row = grid[r];
+    const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
+    const name = g(nameCol), dateRaw = g(idx.date);
+    const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
+    const qty = g(idx.qty), price = g(idx.price);
+    const payRaw = g(idx.pay), payNum = toNum(payRaw);
+    const balRaw = g(idx.balance), balNum = toNum(balRaw);
+    const note = g(idx.note);
+    // ① 期初（余额字样，值取余额列或行内最后一个数字）
+    if(/余额|结余|上年|年底|年初/.test(name + '|' + dateRaw + '|' + note)){
+      let pv = balNum;
+      if(pv == null){
+        for(let c = row.length - 1; c >= 0; c--){
+          const n = toNum(g(c));
+          if(n != null){ pv = n; break; }
+        }
+      }
+      if(pv != null && opening == null){ opening = pv; openingNote = name || dateRaw || note || '期初'; }
+      continue;
+    }
+    // ② 退货行：名称含「退货/退款」，或名称是产品名（非 开票/刷卡/微信/现金/转账/税金/空）且付款列有值。
+    //    总账的扣减列只有一列（index 7）：付款（开票/刷卡/微信/空名）与退货（产品名，如「退货长脚套」「铁头子脚套」）混在同一列
+    if(/退货|退款/.test(name + '|' + note + '|' + amtRaw) ||
+       (amtNum == null && payNum != null && name && !/^(开票|刷卡|微信|现金|转账|税金)$/.test(name))){
+      let amt = amtNum != null ? String(amtNum) : (payNum != null ? String(payNum) : '');
+      if(!amt && qty && price){ const v = toNum(qty) * toNum(price); if(isFinite(v)) amt = String(v); }
+      returns.push({ id: uid(), date: dateRaw ? cleanDate(dateRaw) : lastDate, name: name || '退货', unit: g(idx.unit) || '付', qty, price, amt, note });
+      continue;
+    }
+    // ③ 付款行（金额列为空 + 付款列有值，或无单价/数量/金额）
+    if(amtNum == null && (payNum != null || (!price && !qty))){
+      let pv = payNum;
+      if(pv == null){
+        if(name && /^\d+(\.\d+)?$/.test(name)){ pv = toNum(name); }
+        else{
+          for(let c = 0; c < row.length; c++){
+            if(c === idx.date || c === idx.balance || c === idx.subtotal || c === idx.amount || c === nameCol) continue;
+            const n = toNum(g(c));
+            if(n != null){ pv = n; break; }
+          }
+        }
+      }
+      if(pv != null){
+        payments.push({ id: uid(), date: (dateRaw && /\d{4}/.test(dateRaw)) ? cleanDate(dateRaw) : lastDate, amount: String(pv), note: (name && /[\u4e00-\u9fa5]/.test(name)) ? name : note });
+        continue;
+      }
+    }
+    // ④ 税金货款行（名称含税金 + 金额列有值）→ 计为货款
+    if(amtNum != null && /税金/.test(name)){
+      goods.push({ id: uid(), date: (dateRaw && /\d{4}/.test(dateRaw)) ? (lastDate = cleanDate(dateRaw), cleanDate(dateRaw)) : lastDate, name: name || '税金', unit: g(idx.unit) || '付', qty, price, amt: String(amtNum), waybill: g(idx.waybill), note });
+      continue;
+    }
+    // ⑤ 其余（月度汇总货款行 / 空行 / 日期继承）→ 跳过（汇总与明细表逐笔重复）
+    if(balNum != null) ending = balNum; // 追踪总账期末（余额列最后值）
+    if(dateRaw) lastDate = cleanDate(dateRaw);
+  }
+  return { goods, payments, returns, opening, openingNote, ending };
+}
 function extractOpening(grid){
   for(const row of grid){
     if(!/期初|年底|上年|结余/.test(row.join('|'))) continue;
@@ -1193,7 +1266,7 @@ async function parseImportXlsx(bytes){
     const target = relMap[rid] || 'worksheets/sheet1.xml';
     return { name: s.getAttribute('name'), file: target.indexOf('/') === 0 ? target.slice(1) : ('xl/' + target) };
   });
-  const result = { goods: [], payments: [], returns: [], opening: null, openingNote: '' };
+  const result = { goods: [], payments: [], returns: [], opening: null, openingNote: '', __sheetReturns: [], __summaryReturns: [], __summaryEnding: null };
   for(const s of sheets){
     const xmlStr = files.get(s.file);
     if(!xmlStr) continue;
@@ -1206,14 +1279,53 @@ async function parseImportXlsx(bytes){
       result.goods = result.goods.concat(d.goods);
       result.payments = result.payments.concat(d.payments);
       result.returns = result.returns.concat(d.returns);
+      result.__sheetReturns = result.__sheetReturns.concat(d.returns); // 明细表退货（供自检：不在总账退货区的可疑项）
       if(result.opening == null && d.opening != null){ result.opening = d.opening; result.openingNote = d.openingNote; }
     }
     else if(type === 'returns') result.returns = result.returns.concat(parseReturnsSheet(grid, header, idx));
     else if(type === 'payments') result.payments = result.payments.concat(parsePaymentsSheet(grid, header, idx));
-    else if(type === 'summary'){ const o = extractOpening(grid); if(o){ result.opening = o.opening; result.openingNote = o.note; } }
+    else if(type === 'summary'){
+      const d = parseSummarySheet(grid, header, idx);
+      if(d.opening != null && result.opening == null){ result.opening = d.opening; result.openingNote = d.openingNote; }
+      if(d.ending != null) result.__summaryEnding = d.ending;
+      result.__summaryReturns = result.__summaryReturns.concat(d.returns);
+      // 总账的付款/退货只与「其他 sheet」去重（同指纹只留一条）——不能对总账内部去重：
+      // 同日同金额的多笔付款（如 2025.1.25 开票 50000 + 刷卡 50000）指纹相同但都是有效付款
+      const pf = new Set(result.payments.map(r => rowFp(r, 'payments')));
+      for(const r of d.payments){
+        const fp = rowFp(r, 'payments');
+        if(!pf.has(fp)) result.payments.push(r);
+      }
+      const rf = new Set(result.returns.map(r => rowFp(r, 'returns')));
+      for(const r of d.returns){
+        const fp = rowFp(r, 'returns');
+        if(!rf.has(fp)) result.returns.push(r);
+      }
+      result.goods = result.goods.concat(d.goods); // 税金货款（仅总账有）
+    }
   }
   if(!result.goods.length && !result.payments.length && !result.returns.length){
     throw new Error('未能从这个文件里识别出对账单数据（货款/付款/退货表）');
+  }
+  // 自检：有总账表时，用总账期末核对程序口径（期初 + 货款 − 付款 − 退货）。
+  // 明细表标了「退货」但总账未扣的行（如 ZL069 类）→ 按总账口径不记录，并红字提示用户核对。
+  // 保护：仅当排除这些行后期末与总账一致才执行排除（避免误伤「总账确实含该退货」的文件）
+  if(result.__summaryEnding != null){
+    const sum = (list, key) => list.reduce((s, r) => s + (toNum(r[key]) || 0), 0);
+    const ending0 = (result.opening || 0) + sum(result.goods, 'amt') - sum(result.payments, 'amount') - sum(result.returns, 'amt');
+    const sf = new Set(result.__summaryReturns.map(r => rowFp(r, 'returns')));
+    const suspicious = (result.__sheetReturns || []).filter(r => !sf.has(rowFp(r, 'returns')));
+    let excluded = [], ending = ending0;
+    if(suspicious.length){
+      const exSet = new Set(suspicious.map(r => rowFp(r, 'returns')));
+      const filtered = result.returns.filter(r => !exSet.has(rowFp(r, 'returns')));
+      const endAfter = (result.opening || 0) + sum(result.goods, 'amt') - sum(result.payments, 'amount') - sum(filtered, 'amt');
+      if(Math.abs(endAfter - result.__summaryEnding) < 0.01){ result.returns = filtered; excluded = suspicious; ending = endAfter; }
+    }
+    const diff = Math.round((result.__summaryEnding - ending) * 100) / 100;
+    if(Math.abs(diff) > 0.01 || excluded.length){
+      result.selfCheck = { ending: result.__summaryEnding, computedEnding: Math.round(ending * 100) / 100, diff, suspicious, excluded: excluded.length };
+    }
   }
   return result;
 }
@@ -1279,6 +1391,20 @@ function buildImportSummary(parsed){
   if(parsed.opening != null) h += '期初余额：<b>' + parsed.opening + '</b>（' + esc(parsed.openingNote || '期初') + '）<br>';
   if(state.goods.length || state.payments.length || state.returns.length){
     h += '<span style="color:#a35">当前已有数据：货款 ' + state.goods.length + ' 行、付款 ' + state.payments.length + ' 行、退货 ' + state.returns.length + ' 行</span><br>';
+  }
+  if(parsed.selfCheck){
+    const sc = parsed.selfCheck;
+    h += '<div style="color:#c0392b;font-weight:600;margin-top:10px;border:1px solid #e5b8b2;background:#fdf3f1;border-radius:6px;padding:8px;line-height:1.8">';
+    if(sc.excluded){
+      h += '⚠️ <b>以下行标记了「退货」但你的总账没有扣减，已按总账口径不记录：</b>' +
+        sc.suspicious.map(r => '<b>' + esc(r.name || '退货') + '（' + (r.date || '') + '）' + (r.amt || '') + '元</b>').join('、') + '。<br>';
+    }
+    if(Math.abs(sc.diff) > 0.01){
+      h += '⚠️ <b>期末自检不一致</b>：按本文件数据算出期末 <b>' + sc.computedEnding + '</b>，与总账期末 <b>' + sc.ending + '</b> 相差 <b>' + (sc.diff > 0 ? '+' : '') + sc.diff + '</b> 元。<br>请核对付款/退货记录，确认导入后可在对应页面手动调整。';
+    } else {
+      h += '✅ 期末已与总账核对一致：<b>' + sc.computedEnding + '</b>。';
+    }
+    h += '</div>';
   }
   return h;
 }
