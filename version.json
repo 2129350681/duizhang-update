@@ -1,6 +1,6 @@
 {
-  "version": "2.22",
-  "versionCode": 27,
-  "notes": "日期改由人工填写：新增行不再自动填日期；生成表格（预览/打印/导出）时，没填日期的行自动按同一天（上一行日期）显示",
-  "apk": "duizhang-2.22.apk"
+  "version": "2.23",
+  "versionCode": 28,
+  "notes": "修复：手机偶发显示旧版（fastly/gcore 缓存通道长期停留旧版本，并发竞速下常抢到旧版覆盖新功能）——已移除这两个不可靠通道，只走 raw+cdn 最新源；请务必重新安装本版 APK",
+  "apk": "duizhang-2.23.apk"
 }
