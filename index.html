@@ -69,6 +69,8 @@
   .stats-prod { display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px dashed #eef0f4; font-size: 13px; }
   .stats-prod b { color: #1f6feb; }
   .stats-tip { color: #889; font-size: 12px; }
+  /* 导入撤销条 */
+  .undo-bar { position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%); background: #2c3e50; color: #fff; padding: 10px 14px; border-radius: 12px; display: flex; gap: 10px; align-items: center; z-index: 95; font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.28); max-width: 94vw; flex-wrap: wrap; justify-content: center; }
   /* 选名称面板 */
   .name-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-height: 55vh; overflow-y: auto; margin: 10px 0; }
   .name-picker-search { width: 100%; padding: 12px 14px; font-size: 16px; border: 2px solid #d4d9e0; border-radius: 10px; margin: 6px 0 2px; box-sizing: border-box; background: #fff; color: #223; }
@@ -247,6 +249,12 @@
   </section>
 
   <div id="dataStatus" style="text-align:center;font-size:12px;color:#667;padding:8px 16px 0;background:#fff">…</div>
+  <!-- 导入撤销条（导入后出现，可一键回退到导入前） -->
+  <div id="undoBar" class="undo-bar" style="display:none">
+    <span>↩️ 导入完成</span>
+    <button id="undoBtn" class="primary" style="padding:6px 12px;font-size:13px">撤销本次导入</button>
+    <button id="undoClose" style="padding:6px 10px;font-size:13px" aria-label="关闭">✕</button>
+  </div>
   <div class="actions">
     <button id="importXlsx">📥 导入 Excel (.xlsx)</button>
     <button id="exportXlsx" class="primary">⬇️ 导出 Excel (.xlsx)</button>
@@ -283,6 +291,7 @@
       <label style="display:block;padding:6px 0;cursor:pointer"><input type="radio" name="importMode" value="append" checked> 追加合并（保留现有数据，重复记录自动跳过）</label>
       <label style="display:block;padding:6px 0;cursor:pointer"><input type="radio" name="importMode" value="overwrite"> 覆盖现有数据（清空后用导入文件替换全部数据）</label>
     </div>
+    <div id="importCompare" style="display:none"></div>
     <div class="modal-actions">
       <button id="importCancel">取消</button>
       <button id="importOk" class="primary">确认导入</button>
@@ -465,7 +474,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.49';
+const APP_VERSION = 'v2.50';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1771,6 +1780,7 @@ function setup(){
 
   // 导入 Excel
   let importParsed = null;
+  let __overwriteConfirmed = false; // 覆盖模式二次确认标志（第一次点击只展示对比）
   document.getElementById('importXlsx').addEventListener('click', () => document.getElementById('importFile').click());
   document.getElementById('importFile').addEventListener('change', async e => {
     const f = e.target.files && e.target.files[0];
@@ -1781,6 +1791,9 @@ function setup(){
       importParsed = await parseImportXlsx(buf);
       document.getElementById('importSummary').innerHTML = buildImportSummary(importParsed);
       document.querySelector('input[name="importMode"][value="append"]').checked = true;
+      __overwriteConfirmed = false;
+      const ib = document.getElementById('importOk'); ib.textContent = '确认导入'; ib.classList.remove('danger');
+      document.getElementById('importCompare').innerHTML = ''; document.getElementById('importCompare').style.display = 'none';
       document.getElementById('importModal').classList.add('show');
     } catch(err){
       alert('导入失败：' + err.message);
@@ -1792,6 +1805,18 @@ function setup(){
     if(!importParsed) return;
     const modeEl = document.querySelector('input[name="importMode"]:checked');
     const mode = modeEl ? modeEl.value : 'append';
+    // ② 覆盖模式二次确认：第一次点击只展示对比表，第二次才真正执行
+    if(mode === 'overwrite' && !__overwriteConfirmed){
+      __overwriteConfirmed = true;
+      document.getElementById('importCompare').style.display = 'block';
+      document.getElementById('importCompare').innerHTML = buildCompareHTML(importParsed);
+      const btn = document.getElementById('importOk');
+      btn.textContent = '⚠️ 确认覆盖导入';
+      btn.classList.add('danger');
+      return;
+    }
+    // ① 导入前备份（append/overwrite 都备份，导入后可撤销）
+    saveImportBackup();
     const stats = mergeImport(importParsed, mode);
     save();
     document.getElementById('importModal').classList.remove('show');
@@ -1801,8 +1826,27 @@ function setup(){
     renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
     renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
     renderAllPreviews();
+    __overwriteConfirmed = false;
+    const ib = document.getElementById('importOk'); ib.textContent = '确认导入'; ib.classList.remove('danger');
+    showUndoBar();
     alert('导入完成：' + summaryLine(stats) + (mode === 'overwrite' ? '（已覆盖现有数据）' : ''));
   });
+  // ② 导入模式切换：选覆盖时预填对比表，切回追加时清空；重置二次确认状态
+  document.querySelectorAll('input[name="importMode"]').forEach(r => r.addEventListener('change', () => {
+    __overwriteConfirmed = false;
+    const btn = document.getElementById('importOk');
+    btn.textContent = '确认导入'; btn.classList.remove('danger');
+    const cmp = document.getElementById('importCompare');
+    if(r.value === 'overwrite' && importParsed){
+      cmp.innerHTML = buildCompareHTML(importParsed);
+      cmp.style.display = 'block';
+    } else {
+      cmp.innerHTML = ''; cmp.style.display = 'none';
+    }
+  }));
+  // ① 撤销导入
+  document.getElementById('undoBtn').addEventListener('click', undoImport);
+  document.getElementById('undoClose').addEventListener('click', hideUndoBar);
 
   // 导出 / 打印 / 重置
   document.getElementById('exportXlsx').addEventListener('click', exportXlsx);
@@ -2553,6 +2597,32 @@ async function parseImportXlsx(bytes){
       result.selfCheck = { ending: result.__summaryEnding, computedEnding: Math.round(ending * 100) / 100, diff: 0, suspicious: [], excluded: 0, addedPay: 0, itemDiffs: [], sums: { opening: result.opening != null ? round2(toNum(result.opening)) : null, goods: round2(gSum), payments: round2(pSum), returns: round2(rSum) } };
     }
   }
+  // ③⑥ 异常行收集：金额与数量×单价不一致（amtDiff）、无日期（noDate）、金额≤0（zeroRows）
+  const warnings = { amtDiff: [], noDate: 0, zeroRows: [] };
+  for(const r of result.goods){
+    const locked = toNum(r.amt), q = toNum(r.qty), p = toNum(r.price);
+    if(locked != null && q != null && p != null && Math.abs(locked - round2(q * p)) > 0.01){
+      warnings.amtDiff.push({ date: r.date, name: r.name, amt: locked, calc: round2(q * p) });
+    }
+    if(!String(r.date || '').trim()) warnings.noDate++;
+    const amtVal = locked != null ? locked : (q != null && p != null ? round2(q * p) : null);
+    if(amtVal != null && amtVal <= 0) warnings.zeroRows.push({ date: r.date, name: r.name, amt: amtVal });
+  }
+  result.warnings = warnings;
+  // ⑤ 付款重复警示：同日期同金额 ≥2 笔（可能是同一笔被记两次，也可能是多笔真实付款，提醒确认）
+  const payDupes = [];
+  {
+    const pm = new Map();
+    for(const r of result.payments){
+      const k = String(r.date || '').trim() + '|' + String(r.amount || '').trim();
+      if(!pm.has(k)) pm.set(k, []);
+      pm.get(k).push(r);
+    }
+    for(const arr of pm.values()){
+      if(arr.length >= 2) payDupes.push({ date: arr[0].date, amount: arr[0].amount, count: arr.length });
+    }
+  }
+  result.payDupes = payDupes;
   return result;
 }
 function rowFp(r, kind){
@@ -2647,6 +2717,85 @@ function buildImportSummary(parsed){
     // 无总账表 → 提示按明细逐笔核对（让用户明白为何没走「总账优先」）
     h += '<div style="color:#7f8c8d;font-weight:600;margin-top:10px;border:1px solid #d5d8dc;background:#f8f9f9;border-radius:6px;padding:8px;line-height:1.8">ℹ️ 本文件<b>没有总账表</b>，已按明细逐笔核对（期初 + 货款 − 付款 − 退货）。<br>若期末数字与期望不符，请发源文件给我，我再排查。</div>';
   }
+  // ④ 同客户多文件核对：已有期初 vs 导入期初不一致 → 可能是同一客户的不同账期或重复账期，提醒确认
+  if(state.opening && parsed.opening != null && Math.abs((toNum(state.opening) || 0) - (toNum(parsed.opening) || 0)) > 0.01){
+    h += '<div style="color:#9a6700;border:1px solid #f0d9a8;background:#fdf8ec;border-radius:6px;padding:8px;margin-top:8px;line-height:1.8">⚠️ <b>期初不一致</b>：当前客户期初 <b>' + esc(state.opening) + '</b>（' + esc(state.openingNote || '期初') + '）vs 本文件期初 <b>' + parsed.opening + '</b>（' + esc(parsed.openingNote || '期初') + '）。<br>如果这是同一客户<b>不同账期</b>的文件，请只保留一个期初（通常以最早的账期为准，或用「覆盖」模式）；如果是<b>重复导入</b>同一账期，请取消。请确认后再导入。</div>';
+  }
+  // ③ 异常行警示 + ⑥ 金额差异明细
+  const w = parsed.warnings;
+  if(w && (w.noDate || w.amtDiff.length || w.zeroRows.length)){
+    const warns = [];
+    if(w.noDate) warns.push('<b>' + w.noDate + ' 笔货款没有日期</b>（无法按年/月统计）');
+    if(w.amtDiff.length) warns.push('<b>' + w.amtDiff.length + ' 笔金额与数量×单价不一致</b>');
+    if(w.zeroRows.length) warns.push('<b>' + w.zeroRows.length + ' 笔金额为 0 或负数</b>');
+    h += '<div style="color:#9a6700;border:1px solid #f0d9a8;background:#fdf8ec;border-radius:6px;padding:8px;margin-top:8px;line-height:1.8">⚠️ 请留意：' + warns.join('；') + '。<br><span style="font-size:12px">如果这些行是有意为之（赠送、手填金额等）可以忽略；如果不对请先检查源文件。</span></div>';
+    if(w.amtDiff.length){
+      h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:12px;color:#9a6700">📋 查看金额与数量×单价不一致的明细（' + w.amtDiff.length + ' 笔，前 20）</summary><div style="font-size:12px;line-height:1.8;max-height:170px;overflow:auto;border:1px solid #f0d9a8;border-radius:6px;padding:6px;margin-top:4px">' +
+        w.amtDiff.slice(0, 20).map(d => esc(d.date || '无日期') + '　' + esc(d.name || '?') + '：金额 <b>' + d.amt + '</b> vs 数量×单价 <b>' + d.calc + '</b>').join('<br>') +
+        (w.amtDiff.length > 20 ? '<br>…还有 ' + (w.amtDiff.length - 20) + ' 笔' : '') + '</div></details>';
+    }
+  }
+  // ⑤ 付款重复警示
+  if(parsed.payDupes && parsed.payDupes.length){
+    h += '<div style="color:#9a6700;border:1px solid #f0d9a8;background:#fdf8ec;border-radius:6px;padding:8px;margin-top:8px;line-height:1.8">⚠️ <b>付款中有 ' + parsed.payDupes.length + ' 组同日同金额</b>，请确认不是同一笔被记了两次：' +
+      parsed.payDupes.slice(0, 5).map(d => '<b>' + esc(d.date || '无日期') + '　' + d.amount + ' 元</b> ×' + d.count + ' 笔').join('、') +
+      (parsed.payDupes.length > 5 ? ' …等' : '') + '。</div>';
+  }
+  return h;
+}
+/* ================= 导入保护：备份 / 撤销 / 覆盖对比 ================= */
+// ① 导入前快照：整个数据库深拷贝存备份槽，导入后可一键回退
+function saveImportBackup(){
+  try{
+    if(!db.current || !db.customers[db.current]) return;
+    db.customers[db.current] = state; // 引用同步兜底
+    const snap = { v: db.v, current: db.current, customers: JSON.parse(JSON.stringify(db.customers)) };
+    localStorage.setItem('duizhang-import-backup', JSON.stringify(snap));
+  }catch(e){}
+}
+function showUndoBar(){
+  const bar = document.getElementById('undoBar');
+  if(bar){ bar.style.display = 'flex'; setTimeout(() => { try{ if(bar.style.display === 'flex') bar.style.display = 'none'; }catch(_){} }, 60000); }
+}
+function hideUndoBar(){
+  const bar = document.getElementById('undoBar');
+  if(bar) bar.style.display = 'none';
+}
+function undoImport(){
+  const raw = localStorage.getItem('duizhang-import-backup');
+  if(!raw){ alert('没有可撤销的导入记录。'); return; }
+  try{
+    const snap = JSON.parse(raw);
+    if(!snap || !snap.customers || !Object.keys(snap.customers).length){ localStorage.removeItem('duizhang-import-backup'); alert('备份数据无效，无法撤销。'); return; }
+    if(!confirm('确定撤销本次导入？当前数据将恢复到导入前的状态（导入新增的内容会被移除）。')){
+      return;
+    }
+    db = { v: snap.v || 2, current: snap.current, customers: snap.customers };
+    if(!db.customers[db.current]) db.current = Object.keys(db.customers)[0];
+    state = db.customers[db.current];
+    save();
+    renderCustomerSelector(); syncSettingsInputs();
+    rerenderEditors(); renderAllPreviews();
+    hideUndoBar();
+    alert('已撤销本次导入，数据恢复到导入前的状态。');
+  }catch(e){ alert('撤销失败：' + e.message); }
+}
+// ② 覆盖模式对比表：现有数据 vs 导入数据
+function buildCompareHTML(parsed){
+  const sum = (list, key) => list.reduce((s, r) => s + (toNum(r[key]) || 0), 0);
+  let h = '<div style="font-weight:700;color:#c0392b;margin:6px 0 4px">⚠️ 覆盖模式：将用导入数据替换当前客户的<b>全部</b>数据</div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:6px">';
+  h += '<tr style="background:#f2f5f9"><th style="padding:5px;border:1px solid #d5d9e2;text-align:left">项目</th><th style="padding:5px;border:1px solid #d5d9e2">现有数据</th><th style="padding:5px;border:1px solid #d5d9e2">导入数据</th></tr>';
+  const rows = [
+    ['期初', state.opening || '—', parsed.opening != null ? String(parsed.opening) : '—'],
+    ['货款', state.goods.length + ' 行 / ' + round2(sum(state.goods, 'amt')), parsed.goods.length + ' 行 / ' + round2(sum(parsed.goods, 'amt'))],
+    ['付款', state.payments.length + ' 行 / ' + round2(sum(state.payments, 'amount')), parsed.payments.length + ' 行 / ' + round2(sum(parsed.payments, 'amount'))],
+    ['退货', state.returns.length + ' 行 / ' + round2(sum(state.returns, 'amt')), parsed.returns.length + ' 行 / ' + round2(sum(parsed.returns, 'amt'))],
+  ];
+  for(const [k, a, b] of rows){
+    h += '<tr><td style="padding:5px;border:1px solid #d5d9e2">' + k + '</td><td style="padding:5px;border:1px solid #d5d9e2;text-align:right">' + esc(a) + '</td><td style="padding:5px;border:1px solid #d5d9e2;text-align:right">' + esc(b) + '</td></tr>';
+  }
+  h += '</table><div style="font-size:12px;color:#c0392b">请核对上方数字后再点一次「确认覆盖导入」才真正执行；现有数据被替换后可通过「撤销本次导入」找回（导入前已自动备份）。</div>';
   return h;
 }
 function summaryLine(s){
