@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.43';
+const APP_VERSION = 'v2.44';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1913,13 +1913,27 @@ function parseDetailSheet(grid, headerRow, idx){
     const name = g(idx.name), dateRaw = g(idx.date);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
-    const payRaw = g(idx.pay), payNum = toNum(payRaw);
-    const balRaw = g(idx.balance), balNum = toNum(balRaw);
+    const payRaw = g(idx.pay), payNum0 = toNum(payRaw);
+    let payNum = payNum0;
+    const balRaw = g(idx.balance), balNum0 = toNum(balRaw);
+    let balNum = balNum0;
+    // 表头缺「付款/余额」列名（如汤亚平表头 `…金额|(空)`，数据列错位：金额后一列=付款、后两列=余额）→ 按位兜底
+    const balCol = idx.balance != null ? idx.balance : (idx.amount != null ? idx.amount + 2 : null);
+    const payCol = idx.pay != null ? idx.pay : (idx.amount != null ? idx.amount + 1 : null);
+    if(payNum == null && payCol != null && payCol !== idx.pay && payCol !== balCol){
+      const n = toNum(g(payCol));
+      if(n != null) payNum = n;
+    }
+    if(balNum == null && balCol != null && balCol !== idx.balance){
+      const n = toNum(g(balCol));
+      if(n != null) balNum = n;
+    }
     const note = g(idx.note);
     const subVal = idx.subtotal != null ? g(idx.subtotal) : '';
     // ① 期初/上年余额行（先于汇总判断：名称「2024年余额」等不能被年份正则误拦）
     //    期初值：优先余额列；余额列空时取行内最后一个数字（从右往左）——期初常写在名称列
-    if(/余额|结余|上年|年底|年初/.test(name + '|' + dateRaw + '|' + note)){
+    //    「欠款」行（如汤亚平「欠款 37690」= 上一账期小计−付款的结余，写在单价列）→ 期初 = 欠款额，之前逐笔明细已含在欠款中，全部丢弃
+    if(/余额|结余|上年|年底|年初|欠款/.test(name + '|' + dateRaw + '|' + note + '|' + price)){
       let pv = balNum;
       if(pv == null){
         for(let c = row.length - 1; c >= 0; c--){
@@ -1927,7 +1941,10 @@ function parseDetailSheet(grid, headerRow, idx){
           if(n != null){ pv = n; break; }
         }
       }
-      if(pv != null && opening == null){ opening = pv; openingNote = name || dateRaw || note || '期初'; }
+      if(pv != null && opening == null){
+        opening = pv; openingNote = name || dateRaw || note || (price && /[\u4e00-\u9fa5]/.test(price) ? price : '') || '期初';
+        if(/欠款/.test(name + '|' + dateRaw + '|' + note + '|' + price)){ goods.length = 0; payments.length = 0; returns.length = 0; }
+      }
       firstDataRow = false;
       continue;
     }
@@ -1972,7 +1989,7 @@ function parseDetailSheet(grid, headerRow, idx){
         if(name && /^\d+(\.\d+)?$/.test(name)){ pv = toNum(name); }
         else{
           for(let c = 0; c < row.length; c++){
-            if(c === idx.date || c === idx.balance || c === idx.subtotal || c === idx.amount || c === idx.name) continue;
+            if(c === idx.date || c === balCol || c === idx.subtotal || c === idx.amount || c === idx.name) continue;
             const n = toNum(g(c));
             if(n != null){ pv = n; break; }
           }
@@ -1982,7 +1999,7 @@ function parseDetailSheet(grid, headerRow, idx){
         // 余额差额兜底：付款列未写、行内无其他数字，但余额列比上一笔余额少（隐含付款，如「2021.10.20 … 28000」→ 隐含 3140）
         let prevB = null;
         for(let rr = r - 1; rr >= start; rr--){
-          const bb = toNum(grid[rr][idx.balance]);
+          const bb = toNum(grid[rr][balCol]);
           if(bb != null){ prevB = bb; break; }
         }
         if(prevB != null && balNum < prevB) pv = prevB - balNum;
@@ -1994,6 +2011,8 @@ function parseDetailSheet(grid, headerRow, idx){
     }
     // ⑥ 空行
     if(!name && !qty && !price && amtNum == null && payNum == null && balNum == null) continue;
+    // ⑥.7 纯余额行（期初已定后的余额标注行，如欠款期初后的「37690」余额行）→ 跳过，不产生货款/付款
+    if(!name && !qty && !price && amtNum == null && payNum == null && balNum != null && opening != null) continue;
     // ⑥.5 有名称但无数量/单价/金额 → 备注/标记行跳过（避免「要配脚」等备注变空货款行）
     if(name && !qty && !price && !amtNum) continue;
     // ⑦ 金额/数量/单价列为文字 → 原表不计账，跳过（作废/补数/不计账/月份标记等）
