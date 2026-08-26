@@ -303,7 +303,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.31';
+const APP_VERSION = 'v2.32';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -321,6 +321,47 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
+
+const SEED_CUSTOMERS = [{"id":"seed-03","partyA":"许道丰","partyB":"房正伟"},{"id":"seed-04","partyA":"许道丰","partyB":"肖圣朴"},{"id":"seed-05","partyA":"许道丰","partyB":"高光福"},{"id":"seed-06","partyA":"许道丰","partyB":"陈高弟"},{"id":"seed-07","partyA":"许道丰","partyB":"赵钰杰"},{"id":"seed-08","partyA":"许道丰","partyB":"莫正旭"},{"id":"seed-09","partyA":"许道丰","partyB":"汤雨秋"},{"id":"seed-10","partyA":"许道丰","partyB":"邵建刚"},{"id":"seed-11","partyA":"许道丰","partyB":"洪炳正"},{"id":"seed-12","partyA":"许道丰","partyB":"戴祖英"},{"id":"seed-13","partyA":"许道丰","partyB":"沈贤胡"},{"id":"seed-14","partyA":"许道丰","partyB":"浩莉眼镜"},{"id":"seed-15","partyA":"许道丰","partyB":"贺夕明"},{"id":"seed-16","partyA":"许道丰","partyB":"汤亚平"},{"id":"seed-17","partyA":"许道丰","partyB":"优宝"},{"id":"seed-18","partyA":"许道丰","partyB":"东诚"},{"id":"seed-19","partyA":"许道丰","partyB":"马燕杰"},{"id":"seed-20","partyA":"许道丰","partyB":"睛亮"},{"id":"seed-21","partyA":"许道丰","partyB":"金叶"},{"id":"seed-22","partyA":"许道丰","partyB":"杨海如"}];
+
+/* ===== 预置客户库合并：把用户发来的账单客户一次性建好并导入数据 ====
+   规则：仅当本地无同名客户且该客户未导入过时才并入；绝不覆盖/删除用户已有数据；
+   用户删除某预置客户后，其 id 记入已导入列表，之后不再重复加回。 */
+const SEED_IMPORTED_KEY = 'duizhang-seed-imported';
+function seedImportedList(){
+  try { const raw = localStorage.getItem(SEED_IMPORTED_KEY); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; } catch(e){ return []; }
+}
+function mergeSeedCustomers(){
+  if(!Array.isArray(SEED_CUSTOMERS) || !SEED_CUSTOMERS.length) return 0;
+  const imported = seedImportedList();
+  const existing = new Set(customerList().map(c => String(c.partyB || '').trim()));
+  let added = 0;
+  for(const sc of SEED_CUSTOMERS){
+    const name = String(sc.partyB || '').trim();
+    if(!name || existing.has(name) || imported.includes(sc.id)) continue; // 同名已有或已导入过 → 跳过（绝不覆盖）
+    const c = {
+      id: sc.id,
+      partyA: String(sc.partyA || '').trim() || DEFAULT_PARTY_A,
+      partyB: name,
+      opening: String(sc.opening != null ? sc.opening : ''),
+      openingNote: sc.openingNote || '',
+      cutoffNote: sc.cutoffNote || '',
+      goods: (sc.goods || []).map(r => ({ id: uid(), date: String(r.date||''), name: String(r.name||''), unit: String(r.unit||''), qty: String(r.qty!=null?r.qty:''), price: String(r.price!=null?r.price:''), amt: String(r.amt!=null?r.amt:''), waybill: String(r.waybill||''), note: String(r.note||'') })),
+      payments: (sc.payments || []).map(r => ({ id: uid(), date: String(r.date||''), amount: String(r.amount!=null?r.amount:''), note: String(r.note||'') })),
+      returns: (sc.returns || []).map(r => ({ id: uid(), date: String(r.date||''), name: String(r.name||''), unit: String(r.unit||''), qty: String(r.qty!=null?r.qty:''), price: String(r.price!=null?r.price:''), amt: String(r.amt!=null?r.amt:''), note: String(r.note||'') }))
+    };
+    db.customers[c.id] = c;
+    existing.add(name);
+    imported.push(sc.id);
+    added++;
+  }
+  if(added){
+    try { localStorage.setItem(SEED_IMPORTED_KEY, JSON.stringify(imported)); } catch(_){}
+    save();
+  }
+  return added;
+}
+
 // ===== 历史账单预置产品库（从用户提供的账单 xlsx 自动提取，单价取历史最高；所有客户通用，选名称弹窗里可继续新增）=====
 const DEFAULT_PRODUCTS = [
   { name: '006亮黑', price: '2.8' },
@@ -953,6 +994,7 @@ function load(){
   }
   else { db = freshDb(); }
   state = db.customers[db.current];
+  try { mergeSeedCustomers(); } catch(e){}
 }
 /* —— 客户切换 —— */
 function renderCustomerSelector(){
