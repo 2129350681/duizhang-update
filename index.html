@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.42';
+const APP_VERSION = 'v2.43';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2154,7 +2154,7 @@ async function parseImportXlsx(bytes){
     const target = relMap[rid] || 'worksheets/sheet1.xml';
     return { name: s.getAttribute('name'), file: target.indexOf('/') === 0 ? target.slice(1) : ('xl/' + target) };
   });
-  const result = { goods: [], payments: [], returns: [], opening: null, openingNote: '', __sheetReturns: [], __summaryReturns: [], __summaryEnding: null };
+  const result = { goods: [], payments: [], returns: [], opening: null, openingNote: '', __sheetReturns: [], __summaryReturns: [], __summaryPayments: [], __summaryEnding: null };
   // 预扫描：解析每个 sheet 并先确定期初（opening/openingNote）。多账期文件（如 2025 + 2024 两张连续年表）里，
   // 期初注释带年份（如「2024年余额」）表示期初 = 该年年底余额，该年份及更早的账期表明细已含在期初中，不得重复计入。
   const scan = [];
@@ -2201,6 +2201,7 @@ async function parseImportXlsx(bytes){
     else if(type === 'summary'){
       if(d.ending != null) result.__summaryEnding = d.ending;
       result.__summaryReturns = result.__summaryReturns.concat(d.returns);
+      result.__summaryPayments = result.__summaryPayments.concat(d.payments); // 总账付款（供自检：明细缺失时自动补齐）
       // 总账的付款/退货只与「其他 sheet」去重（同指纹只留一条）——不能对总账内部去重：
       // 同日同金额的多笔付款（如 2025.1.25 开票 50000 + 刷卡 50000）指纹相同但都是有效付款
       const pf = new Set(result.payments.map(r => rowFp(r, 'payments')));
@@ -2219,24 +2220,50 @@ async function parseImportXlsx(bytes){
   if(!result.goods.length && !result.payments.length && !result.returns.length){
     throw new Error('未能从这个文件里识别出对账单数据（货款/付款/退货表）');
   }
-  // 自检：有总账表时，用总账期末核对程序口径（期初 + 货款 − 付款 − 退货）。
-  // 明细表标了「退货」但总账未扣的行（如 ZL069 类）→ 按总账口径不记录，并红字提示用户核对。
-  // 保护：仅当排除这些行后期末与总账一致才执行排除（避免误伤「总账确实含该退货」的文件）
+  // 自检（总账优先）：有总账表时，以总账期末为权威核对程序口径（期初 + 货款 − 付款 − 退货）。
+  // 自动反思：不一致时按顺序尝试 —— ①排除明细标「退货」但总账未扣的行（ZL069 类）；
+  // ②补齐总账有而明细缺的付款（总账是权威）；③仍不一致则输出各项差额分析供用户核对。
   if(result.__summaryEnding != null){
     const sum = (list, key) => list.reduce((s, r) => s + (toNum(r[key]) || 0), 0);
     const ending0 = (result.opening || 0) + sum(result.goods, 'amt') - sum(result.payments, 'amount') - sum(result.returns, 'amt');
     const sf = new Set(result.__summaryReturns.map(r => rowFp(r, 'returns')));
     const suspicious = (result.__sheetReturns || []).filter(r => !sf.has(rowFp(r, 'returns')));
     let excluded = [], ending = ending0;
+    // ① 明细退货但总账未扣 → 排除（保护：仅当排除后期末与总账一致才执行，避免误伤）
     if(suspicious.length){
       const exSet = new Set(suspicious.map(r => rowFp(r, 'returns')));
       const filtered = result.returns.filter(r => !exSet.has(rowFp(r, 'returns')));
       const endAfter = (result.opening || 0) + sum(result.goods, 'amt') - sum(result.payments, 'amount') - sum(filtered, 'amt');
       if(Math.abs(endAfter - result.__summaryEnding) < 0.01){ result.returns = filtered; excluded = suspicious; ending = endAfter; }
     }
+    // ② 总账付款有、明细缺（指纹差）→ 自动补齐（总账权威；补齐后必须期末一致才采用）
+    let addedPay = [];
+    if(Math.abs(result.__summaryEnding - ending) > 0.01){
+      const pfSet = new Set(result.payments.map(r => rowFp(r, 'payments')));
+      const missing = (result.__summaryPayments || []).filter(r => !pfSet.has(rowFp(r, 'payments')));
+      if(missing.length){
+        const endAdd = ending - sum(missing, 'amount');
+        if(Math.abs(result.__summaryEnding - endAdd) < 0.01){
+          result.payments = result.payments.concat(missing);
+          addedPay = missing; ending = endAdd;
+        }
+      }
+    }
+    // ③ 期末复核 + 差异分析
     const diff = Math.round((result.__summaryEnding - ending) * 100) / 100;
-    if(Math.abs(diff) > 0.01 || excluded.length){
-      result.selfCheck = { ending: result.__summaryEnding, computedEnding: Math.round(ending * 100) / 100, diff, suspicious, excluded: excluded.length };
+    if(Math.abs(diff) > 0.01 || excluded.length || addedPay.length){
+      result.selfCheck = {
+        ending: result.__summaryEnding,
+        computedEnding: Math.round(ending * 100) / 100,
+        diff, suspicious, excluded: excluded.length, addedPay: addedPay.length,
+        // 各项对比（供用户核对差异来源）
+        sums: {
+          opening: result.opening != null ? Math.round(toNum(result.opening) * 100) / 100 : null,
+          goods: Math.round(sum(result.goods, 'amt') * 100) / 100,
+          payments: Math.round(sum(result.payments, 'amount') * 100) / 100,
+          returns: Math.round(sum(result.returns, 'amt') * 100) / 100,
+        },
+      };
     }
   }
   return result;
@@ -2307,13 +2334,17 @@ function buildImportSummary(parsed){
   if(parsed.selfCheck){
     const sc = parsed.selfCheck;
     h += '<div style="color:#c0392b;font-weight:600;margin-top:10px;border:1px solid #e5b8b2;background:#fdf3f1;border-radius:6px;padding:8px;line-height:1.8">';
+    if(sc.addedPay > 0){
+      h += '✅ <b>已自动从总账补齐付款 ' + sc.addedPay + ' 笔</b>（明细表漏记，总账为准），期末已核对一致。<br>';
+    }
     if(sc.excluded){
       h += '⚠️ <b>以下行标记了「退货」但你的总账没有扣减，已按总账口径不记录：</b>' +
         sc.suspicious.map(r => '<b>' + esc(r.name || '退货') + '（' + (r.date || '') + '）' + (r.amt || '') + '元</b>').join('、') + '。<br>';
     }
     if(Math.abs(sc.diff) > 0.01){
-      h += '⚠️ <b>期末自检不一致</b>：按本文件数据算出期末 <b>' + sc.computedEnding + '</b>，与总账期末 <b>' + sc.ending + '</b> 相差 <b>' + (sc.diff > 0 ? '+' : '') + sc.diff + '</b> 元。<br>请核对付款/退货记录，确认导入后可在对应页面手动调整。';
-    } else {
+      h += '⚠️ <b>期末自检不一致</b>：按本文件数据算出期末 <b>' + sc.computedEnding + '</b>，与总账期末 <b>' + sc.ending + '</b> 相差 <b>' + (sc.diff > 0 ? '+' : '') + sc.diff + '</b> 元。<br>';
+      h += '已自动核对各项：期初 <b>' + (sc.sums.opening ?? '无') + '</b>、货款合计 <b>' + sc.sums.goods + '</b>、付款合计 <b>' + sc.sums.payments + '</b>、退货合计 <b>' + sc.sums.returns + '</b>。<br>请对照检查哪一项与总账对不上，可在对应页面手动调整后再导入。';
+    } else if(!sc.addedPay && !sc.excluded){
       h += '✅ 期末已与总账核对一致：<b>' + sc.computedEnding + '</b>。';
     }
     h += '</div>';
