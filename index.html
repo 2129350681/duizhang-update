@@ -156,7 +156,7 @@
   <section id="tab-summary" class="tab">
     <div class="card">
       <div class="preview" id="summaryPreview"></div>
-      <p style="font-size:12px;color:#889;margin-top:10px">公式：余额 = 期初余额 + 累计货款 − 总付款 − 总退货</p>
+      <p style="font-size:12px;color:#889;margin-top:10px">公式：期末余额 = 期初余额 + 累计总货款 − 总付款 − 总退货（累计总货款 = 各期货款合计，不含期初；应收余额 = 期初余额 + 累计总货款）</p>
     </div>
   </section>
 
@@ -229,7 +229,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.10';
+const APP_VERSION = 'v2.11';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -504,9 +504,13 @@ function buildSummaryRows(){
     cum = round2(cum + t.total);
     rows.push({ label: t.year + '年货款', goods: t.total, pay: null, ret: null, bal: cum, cls: '' });
   }
-  const balGoods = round2(opening + totalGoods);
-  rows.push({ label: '累计总货款', goods: null, pay: null, ret: null, bal: balGoods, cls: 'subtotal' });
-  const balPay = round2(balGoods - totalPay);
+  // ① 累计总货款 = 只统计货款业务记录，不含期初余额
+  rows.push({ label: '累计总货款', goods: totalGoods, pay: null, ret: null, bal: null, cls: 'subtotal' });
+  // ② 应收余额 = 期初余额 + 累计总货款（原「累计总货款」位置误放的数放这一行）
+  const balReceivable = round2(opening + totalGoods);
+  rows.push({ label: '应收余额', goods: null, pay: null, ret: null, bal: balReceivable, cls: 'subtotal' });
+  // ③ 期末余额 = 期初 + 各期货款 − 总付款 − 总退货（与手工 Excel 一致）
+  const balPay = round2(balReceivable - totalPay);
   rows.push({ label: '总付款', goods: null, pay: totalPay, ret: null, bal: balPay, cls: '' });
   const balFinal = round2(balPay - totalRet);
   rows.push({ label: '总退货', goods: null, pay: null, ret: totalRet, bal: balFinal, cls: 'year-total' });
