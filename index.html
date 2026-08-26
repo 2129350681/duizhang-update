@@ -112,6 +112,12 @@
     #printArea table.pv tr { page-break-inside: avoid; }
     #printArea .sheet-title { font-size: 16px; }
   }
+  /* ===== 回到顶部（回首页）浮动按钮：常驻右下角小圆钮，点击平滑回顶 ===== */
+  .back-top{position:fixed;right:16px;bottom:88px;width:46px;height:46px;border-radius:50%;border:none;background:rgba(59,130,246,.85);color:#fff;font-size:22px;line-height:1;cursor:pointer;z-index:999;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.25);opacity:.8;transition:opacity .2s;-webkit-tap-highlight-color:transparent}
+  .back-top:hover{opacity:1}
+  .back-top:active{transform:scale(.92)}
+  body.large-mode .back-top{width:56px;height:56px;font-size:27px;right:14px;bottom:96px}
+  @media (max-width:640px){.back-top{bottom:70px}}
 </style>
 </head>
 <body>
@@ -955,9 +961,18 @@ function updateDataStatus(){
 }
 function defaultPayment(){ return { id: uid(), date:'', amount:'', note:'' }; }
 function defaultReturn(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', note:'' }; }
+/* 客户固定编号：按当前顺序给无编号客户分配 01/02/…（已有编号的不动，保证固定；删除客户后空号不补） */
+function ensureCustomerNos(){
+  let n = 1;
+  for(const c of customerList()){
+    if(c.no && !isNaN(parseInt(c.no, 10))){ n = Math.max(n, parseInt(c.no, 10) + 1); }
+    else { c.no = String(n++).padStart(2, '0'); }
+  }
+}
 function save(){
   try {
     if(db.current && db.customers[db.current]) db.customers[db.current] = state; // 引用同步兜底
+    ensureCustomerNos(); // 给新客户补固定编号（已有编号不动）
     localStorage.setItem(LS_KEY, JSON.stringify(db)); window.__lsFail = false;
   }
   catch(e){
@@ -995,6 +1010,8 @@ function load(){
   else { db = freshDb(); }
   state = db.customers[db.current];
   try { mergeSeedCustomers(); } catch(e){}
+  ensureCustomerNos(); // 给客户分配固定编号（已有编号不动）；load 后必跑一次并持久化，保证已有数据升级也出编号
+  try { save(); } catch(e){}
 }
 /* —— 客户切换 —— */
 function renderCustomerSelector(){
@@ -1003,7 +1020,7 @@ function renderCustomerSelector(){
   sel.innerHTML = '';
   for(const c of customerList()){
     const opt = document.createElement('option');
-    opt.value = c.id; opt.textContent = customerDisplay(c);
+    opt.value = c.id; opt.textContent = (c.no ? c.no + ' ' : '') + customerDisplay(c);
     sel.appendChild(opt);
   }
   sel.value = db.current;
@@ -1380,6 +1397,13 @@ function bindSettings(){
 /* ================= 工具栏绑定 ================= */
 function setup(){
   load();
+  // 回到首页：右下角常驻小圆钮，点击平滑回到顶部（方便切换客户）
+  const backTopBtn = document.getElementById('backTopBtn');
+  if(backTopBtn){
+    backTopBtn.addEventListener('click', () => {
+      try{ window.scrollTo({ top:0, behavior:'smooth' }); }catch(_){ window.scrollTo(0, 0); }
+    });
+  }
   // 客户切换
   renderCustomerSelector();
   const selC = document.getElementById('customerSelect');
@@ -2547,5 +2571,6 @@ window.__duizhangImportTest = async function(b64, mode){
   };
 };
 </script>
+<button id="backTopBtn" class="back-top" title="回到首页" aria-label="回到首页">⬆</button>
 </body>
 </html>
