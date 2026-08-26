@@ -340,7 +340,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.34';
+const APP_VERSION = 'v2.35';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1458,7 +1458,7 @@ function setup(){
     };
     document.getElementById('aiChatSend').addEventListener('click', sendAI);
     document.getElementById('aiChatInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); sendAI(); } });
-    const chips = ['房正伟的余额','所有客户合计','怎么导出 Excel','新建客户 张三','切到 05','大字模式'];
+    const chips = ['房正伟的余额','所有客户合计','产品统计','怎么导出 Excel','新建客户 张三','切到 05','大字模式'];
     const chipBox = document.getElementById('aiChatChips');
     if(chipBox){
       for(const c of chips){
@@ -2688,6 +2688,7 @@ const AI_FAQ = [
   { k:['编号是什么','前面数字','号码'], a:'客户名字前的编号（01/02…）是固定编号，方便对号查找；删除客户后编号不变、不补。' },
   { k:['单价自动','记忆单价','自动带出'], a:'输入名称后自动带出历史单价，可在设置里关掉「自动带出单价」。' },
   { k:['粘贴','复制进来'], a:'点「📋 批量粘贴」，把 Excel 里的行直接复制进来（日期/名称/数量/单价…）。' },
+  { k:['产品统计','有哪些产品','统计产品','产品数量','哪些东西','什么产品'], a:'问「产品统计」就能看到所有客户卖过的产品：每种出现几次、数量多少、金额多少（按次数排序，显示前 20 种）。也可以指定客户，如「房正伟的产品统计」。' },
 ];
 function aiHandle(raw){
   const t = aiNorm(raw);
@@ -2748,6 +2749,32 @@ function aiHandle(raw){
     const c2 = aiCustOf(t);
     if(c2 && c2.id !== db.current){ selectCustomer(c2.id); return aiSay('已切换到客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。'); }
     if(c2) return aiSay('现在就是客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。');
+  }
+  /* 产品统计：统计账单里的产品名/出现次数/数量/金额（默认所有客户；提到某客户只统计该客户） */
+  const prodQ = /产品|品名/.test(t) || (/统计/.test(t) && /名称|名字|品名/.test(t));
+  if(prodQ && /统计|多少|哪些|什么|几次|几种|汇总|一共|总共|最多/.test(t)){
+    let scope = customerList().filter(c => c.partyB);
+    const one = aiCustOf(t);
+    if(one) scope = [one];
+    const map = new Map();
+    for(const c of scope){
+      for(const r of c.goods){
+        const nm = String(r.name || '').trim();
+        if(!nm) continue;
+        const e = map.get(nm) || { count:0, qty:0, amt:0 };
+        e.count++;
+        const q = toNum(r.qty); if(q != null) e.qty += q;
+        const a = toNum(r.amt); if(a != null) e.amt += a;
+        map.set(nm, e);
+      }
+    }
+    const arr = [...map.entries()].sort((a, b) => b[1].count - a[1].count || b[1].amt - a[1].amt);
+    const scopeLabel = one ? ('客户「' + customerDisplay(one) + '」') : ('全部 ' + scope.length + ' 个客户');
+    if(!arr.length) return aiSay('【产品统计】' + scopeLabel + '：还没有货款记录，统计不出产品。');
+    const lines = ['【产品统计】' + scopeLabel + '，共 ' + arr.length + ' 种产品（按出现次数排序）：'];
+    arr.slice(0, 20).forEach(([nm, e], i) => lines.push((i + 1) + '. ' + nm + '　×' + e.count + ' 次，数量 ' + aiMoney(e.qty) + '，金额 ' + aiMoney(e.amt)));
+    if(arr.length > 20) lines.push('…（还有 ' + (arr.length - 20) + ' 种，这里只显示前 20 种）');
+    return aiSay(lines.join('\n'));
   }
   /* FAQ（使用知识） */
   for(const f of AI_FAQ){ if(f.k.some(k => t.includes(k))) return aiSay(f.a); }
