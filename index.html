@@ -229,7 +229,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.7';
+const APP_VERSION = 'v2.8';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -290,6 +290,37 @@ function yearTotals(groups){
 function totalAll(rows){ return round2(rows.reduce((s,r)=>{ const a = rowAmount(r); return a == null ? s : s + a; }, 0)); }
 function totalPayAll(){ return round2(state.payments.reduce((s,r)=>{ const a = toNum(r.amount); return a == null ? s : s + a; }, 0)); }
 
+// 每行货款对应的累计余额：期初 + 已发生货款 − 已发生付款 − 已发生退货，按日期事件流累计
+// 返回 { map: 货款行索引->余额, final: 最终余额 }（无日期事件放最后，同日期时货款先于付款/退货）
+function balanceSeries(){
+  const opening = toNum(state.opening) || 0;
+  const map = new Map();
+  const dateKey = (d) => {
+    const t = String(d || '').trim();
+    const m = t.match(/^(\d{4})[.\-\/年](\d{1,2})(?:[.\-\/月](\d{1,2}))?/);
+    if(!m) return 1e15;
+    return (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3] || 0);
+  };
+  const events = [];
+  state.goods.forEach((g, i) => { const a = rowAmount(g); events.push({ k:'g', i, date: g.date, amt: a == null ? 0 : a, has: a != null }); });
+  state.payments.forEach((p, j) => { const a = toNum(p.amount); events.push({ k:'p', i: 1e9 + j, date: p.date, amt: a == null ? 0 : a, has: a != null }); });
+  state.returns.forEach((r, k) => { const a = rowAmount(r); events.push({ k:'r', i: 2e9 + k, date: r.date, amt: a == null ? 0 : a, has: a != null }); });
+  events.sort((a, b) => (dateKey(a.date) - dateKey(b.date)) || (a.i - b.i));
+  let bal = opening;
+  for(const e of events){
+    if(e.k === 'g'){ if(e.has) bal = round2(bal + e.amt); map.set(e.i, bal); }
+    else if(e.has) bal = round2(bal - e.amt);
+  }
+  return { map, final: bal };
+}
+// 把 balanceSeries 的索引 map 转成 行 id -> 余额 的 map（供编辑表/预览表直接用）
+function balanceByIdMap(){
+  const ser = balanceSeries();
+  const m = new Map();
+  state.goods.forEach((r, i) => { if(ser.map.has(i)) m.set(r.id, ser.map.get(i)); });
+  return m;
+}
+
 /* ================= 编辑表格渲染 ================= */
 const G_FIELDS = [
   { key:'date', label:'日期', ph:'2023.3.23', cls:'' },
@@ -318,14 +349,17 @@ function syncEditorsFromDom(){
   syncEditorFromDom(state.payments, document.getElementById('paymentsEditor'));
   syncEditorFromDom(state.returns, document.getElementById('returnsEditor'));
 }
-function renderEditor(rows, fields, amountKey, tableEl){
+function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   syncEditorFromDom(rows, tableEl); // 渲染前先保住用户已输入但尚未写入 state 的值
+  if(balanceMap) tableEl.__balanceMap = balanceMap; // 删除行后重渲染沿用
+  const bm = tableEl.__balanceMap;
   let html = '<thead><tr>';
   fields.forEach(f => html += `<th style="${f.w?'width:'+f.w+';':''}">${f.label}</th>`);
   if(amountKey) html += '<th style="width:90px">金额</th>';
+  if(bm) html += '<th style="width:90px">余额</th>';
   html += '<th style="width:44px"></th></tr></thead><tbody>';
   if(!rows.length){
-    html += `<tr><td colspan="${fields.length + (amountKey?2:1)}"><div class="empty-tip">还没有数据，点上方「添加一行」或「批量粘贴」开始录入</div></td></tr>`;
+    html += `<tr><td colspan="${fields.length + (amountKey?2:1) + (bm?1:0)}"><div class="empty-tip">还没有数据，点上方「添加一行」或「批量粘贴」开始录入</div></td></tr>`;
   }
   rows.forEach(r => {
     html += '<tr>';
@@ -335,6 +369,10 @@ function renderEditor(rows, fields, amountKey, tableEl){
     if(amountKey){
       const a = amountKey === 'amount' ? rowAmount(r) : toNum(r[amountKey]);
       html += `<td class="amount-cell" data-amount="${r.id}">${a == null ? '—' : fmt(a)}</td>`;
+    }
+    if(bm){
+      const b = bm.get(r.id);
+      html += `<td class="amount-cell" data-balance="${r.id}">${b == null ? '—' : fmt(b)}</td>`;
     }
     html += `<td><button class="del-btn" data-del="${r.id}" title="删除">✕</button></td></tr>`;
   });
@@ -376,11 +414,11 @@ function updatePreviewArea(html, el){
 }
 
 /* ================= 货款预览 ================= */
-function goodsSheetHTML(groups, yearTotalList, title, sub){
-  const cols = 9; // 日期 名称 单位 数量 单价 金额 小计 发货单号 备注
+function goodsSheetHTML(groups, yearTotalList, title, sub, balMap){
+  const cols = 10; // 日期 名称 单位 数量 单价 金额 余额 小计 发货单号 备注
   let h = `<div class="sheet-title">${esc(title)}</div>`;
   if(sub) h += `<div class="sheet-sub">${esc(sub)}</div>`;
-  h += '<table class="pv"><thead><tr><th>日期</th><th>名称及规格</th><th>单位</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th class="num">小计</th><th>发货单号</th><th>备注</th></tr></thead><tbody>';
+  h += '<table class="pv"><thead><tr><th>日期</th><th>名称及规格</th><th>单位</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th class="num">余额</th><th class="num">小计</th><th>发货单号</th><th>备注</th></tr></thead><tbody>';
   for(const g of groups){
     let monthSum = 0;
     for(const r of g.rows){
@@ -389,14 +427,15 @@ function goodsSheetHTML(groups, yearTotalList, title, sub){
       if(isSum) monthSum += a;
       const y = parseDateParts(r.date);
       const dateTxt = y ? `${y.y}.${y.mo || ''}${y.d ? '.' + y.d : ''}` : r.date;
-      h += `<tr><td>${esc(dateTxt)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td><td class="num">${esc(r.qty)}</td><td class="num">${esc(r.price)}</td><td class="num">${isSum ? fmt(a) : ''}</td><td class="num"></td><td>${esc(r.waybill)}</td><td>${esc(r.note)}</td></tr>`;
+      const bal = balMap ? balMap.get(r.id) : null;
+      h += `<tr><td>${esc(dateTxt)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td><td class="num">${esc(r.qty)}</td><td class="num">${esc(r.price)}</td><td class="num">${isSum ? fmt(a) : ''}</td><td class="num">${bal == null ? '' : fmt(bal)}</td><td class="num"></td><td>${esc(r.waybill)}</td><td>${esc(r.note)}</td></tr>`;
     }
     if(g.key != null && g.key % 100 !== 0){
-      h += `<tr class="subtotal"><td colspan="5"></td><td>${g.label}小计</td><td class="num">${fmt(monthSum)}</td><td colspan="2"></td></tr>`;
+      h += `<tr class="subtotal"><td colspan="5"></td><td>${g.label}小计</td><td></td><td class="num">${fmt(monthSum)}</td><td colspan="2"></td></tr>`;
     }
   }
   for(const yt of yearTotalList){
-    h += `<tr class="year-total"><td>${yt.year}年货款</td><td>总计</td><td colspan="3"></td><td></td><td class="num">${fmt(yt.total)}</td><td colspan="2"></td></tr>`;
+    h += `<tr class="year-total"><td>${yt.year}年货款</td><td>总计</td><td colspan="3"></td><td></td><td></td><td class="num">${fmt(yt.total)}</td><td colspan="2"></td></tr>`;
   }
   h += '</tbody></table>';
   return h;
@@ -409,11 +448,12 @@ function renderGoodsPreview(){
   const byYear = new Map();
   for(const g of groups){ const y = yearOf(g.key); if(!byYear.has(y)) byYear.set(y, []); byYear.get(y).push(g); }
   const years = [...byYear.keys()].sort((a,b)=>(a==null?1e9:a)-(b==null?1e9:b));
+  const bm = balanceByIdMap();
   for(const y of years){
     const gg = byYear.get(y);
     const title = y == null ? `${state.partyA}与${state.partyB}的货款（未标注日期）` : `${y}年${state.partyA}与${state.partyB}的对账单`;
     const ytList = yt.filter(t => t.year === y);
-    h += goodsSheetHTML(gg, ytList, title, state.cutoffNote);
+    h += goodsSheetHTML(gg, ytList, title, state.cutoffNote, bm);
   }
   const total = totalAll(state.goods);
   h += `<p style="font-size:13px;color:#334;margin:4px 0 10px">货款合计：<b style="color:#1a5fd0">${fmt(total)}</b></p>`;
@@ -521,7 +561,7 @@ function setup(){
   // 货款
   const goodsEditor = document.getElementById('goodsEditor');
   goodsEditor.__fields = G_FIELDS; goodsEditor.__amountKey = 'amount';
-  const renderGoodsEditor = () => renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor);
+  const renderGoodsEditor = () => renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor, balanceByIdMap());
   bindEditor(goodsEditor, state.goods, 'amount', renderGoodsPreview);
   document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); save(); renderGoodsEditor(); renderGoodsPreview(); focusLastRow(document.getElementById('goodsEditor')); });
   document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); renderGoodsPreview(); } });
@@ -625,7 +665,7 @@ function setup(){
     document.getElementById('importModal').classList.remove('show');
     document.getElementById('opening').value = state.opening;
     document.getElementById('openingNote').value = state.openingNote;
-    renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor);
+    renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor, balanceByIdMap());
     renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
     renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
     renderAllPreviews();
@@ -800,66 +840,150 @@ function cleanDate(s){
 function sheetHeaderRow(grid){
   for(const row of grid){
     const joined = row.join('|');
-    if(joined.includes('名称及规格') || joined.includes('日期')) return row;
+    if(joined.includes('名称及规格') || joined.includes('品名') || joined.includes('名称') || joined.includes('日期')) return row;
   }
   return null;
 }
-function classifySheet(sheetName, headerRow){
-  const name = String(sheetName || '');
-  if(name.includes('总账')) return 'summary';
-  const joined = (headerRow || []).join('|');
-  // 退货：sheet 名或表头明确含「退货」字样才判退货
-  if(/退货/.test(name) || joined.includes('退货')) return 'returns';
-  // 货款明细：表头含「名称及规格」即货款（外部手账表头为 日期|名称及规格|单位|数量|单价|金额|付款|余额，
-  // 无「小计」字样，此前被误判为退货；自家导出表头同样命中此条）
-  if(joined.includes('名称及规格')) return 'goods';
-  // 付款流水：含「付款」列（可能带「余额」列；自家付款表头为 日期|付款|备注|累计付款 无「余额」）
-  if(joined.includes('付款')) return 'payments';
-  if(/货款/.test(name)) return 'goods';
-  return null;
-}
-function headerIdx(headerRow){
+// 智能列识别：按关键词匹配表头各列（支持各种手账列名变体）
+function detectHeader(headerRow){
   const idx = {};
-  headerRow.forEach((h, i) => {
+  const pats = [
+    ['date',    ['日期', '时间', '年月日']],
+    ['name',    ['名称及规格', '品名', '货名', '名称', '规格', '产品', '材料']],
+    ['unit',    ['单位']],
+    ['qty',     ['数量']],
+    ['price',   ['单价', '价格']],
+    ['amount',  ['金额', '货款', '货值']],
+    ['balance', ['余额', '结余', '欠款', '结欠']],
+    ['pay',     ['付款', '已付', '付给', '实付']],
+    ['waybill', ['发货', '单号', '单据']],
+    ['subtotal',['小计', '小结']],
+    ['note',    ['备注', '说明']],
+  ];
+  (headerRow || []).forEach((h, i) => {
     const k = String(h || '').trim();
-    if(k === '日期') idx.date = i;
-    if(k === '名称及规格') idx.name = i;
-    if(k === '单位') idx.unit = i;
-    if(k === '数量') idx.qty = i;
-    if(k === '单价') idx.price = i;
-    if(k === '金额') idx.amount = i;
-    if(k === '小计' || k === '备注') idx.note = i;
-    if(k === '发货单号') idx.waybill = i;
-    if(k === '付款') idx.pay = i;
+    if(!k) return;
+    for(const [field, list] of pats){
+      if(idx[field] != null) continue;
+      if(list.some(p => k.includes(p))) idx[field] = i;
+    }
   });
   return idx;
+}
+function classifySheet(sheetName, headerRow, idx){
+  const name = String(sheetName || '');
+  if(name.includes('总账')) return 'summary';
+  if(/退货|退款/.test(name)) return 'returns';
+  const hd = (headerRow || []).map(h => String(h || '').trim()).filter(Boolean);
+  if(hd.some(h => h.includes('退货') || h.includes('退款'))) return 'returns';
+  const hasName = idx.name != null;
+  const hasAmt = idx.amount != null;
+  const hasPay = idx.pay != null;
+  if(hasName && (hasAmt || hasPay || idx.balance != null)) return 'goods';
+  if(hasPay && !hasName) return 'payments';
+  if(/货款/.test(name)) return 'goods';
+  return null;
 }
 function gridIndexOf(grid, headerRow){
   for(let i = 0; i < grid.length; i++){ if(grid[i] === headerRow) return i; }
   return 0;
 }
-function parseGoodsSheet(grid, headerRow){
-  const idx = headerIdx(headerRow);
+// 明细表（货款）通用解析：自动分离 期初行 / 付款行 / 退货行 / 小计汇总行 / 文字标记行
+function parseDetailSheet(grid, headerRow, idx){
   const start = gridIndexOf(grid, headerRow) + 1;
-  const rows = [];
+  const goods = [], payments = [], returns = [];
   let lastDate = '';
+  let opening = null, openingNote = '';
+  let firstDataRow = true;
   for(let r = start; r < grid.length; r++){
-    const g = (i) => (i == null || grid[r][i] == null) ? '' : String(grid[r][i]).trim();
+    const row = grid[r];
+    const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
     const name = g(idx.name), dateRaw = g(idx.date);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
-    if(/小计|总计|一共|小结/.test(dateRaw + '|' + name + '|' + amtRaw + '|' + qty)) continue;
-    if(amtRaw && /[\u4e00-\u9fa5]/.test(amtRaw)) continue; // 金额列为文字（作废/不计账/补数等）→ 原表不计账，跳过
-    if(qty && /[\u4e00-\u9fa5]/.test(qty)) continue; // 数量列为文字（如「2025年10月15日止小计」）→ 跳过
-    if(!name && !qty && !price && amtNum == null) continue; // 空行
-    if(dateRaw) lastDate = cleanDate(dateRaw); // 原表合并单元格：本行日期为空时继承上一行的日期
-    const date = dateRaw ? cleanDate(dateRaw) : lastDate;
-    rows.push({ id: uid(), date, name, unit: g(idx.unit) || '付', qty, price, amt: amtNum != null ? String(amtNum) : '', waybill: g(idx.waybill), note: g(idx.note) });
+    const payRaw = g(idx.pay), payNum = toNum(payRaw);
+    const balRaw = g(idx.balance), balNum = toNum(balRaw);
+    const note = g(idx.note);
+    const subVal = idx.subtotal != null ? g(idx.subtotal) : '';
+    // ① 期初/上年余额行（先于汇总判断：名称「2024年余额」等不能被年份正则误拦）
+    //    期初值：优先余额列；余额列空时取行内最后一个数字（从右往左）——期初常写在名称列
+    if(/余额|结余|上年|年底|年初/.test(name + '|' + dateRaw + '|' + note)){
+      let pv = balNum;
+      if(pv == null){
+        for(let c = row.length - 1; c >= 0; c--){
+          const n = toNum(g(c));
+          if(n != null){ pv = n; break; }
+        }
+      }
+      if(pv != null && opening == null){ opening = pv; openingNote = name || dateRaw || note || '期初'; }
+      firstDataRow = false;
+      continue;
+    }
+    // ② 明细表首行数据 → 期初：a) 只有余额列有值（如「2024.2.4 … 63055」）；
+    //    b) 名称列为纯数字且无数量单价金额（如「2021.2.1 | 177843」，期初写在名称列）
+    if(opening == null && firstDataRow && !qty && !price && amtNum == null && payNum == null && balNum != null){
+      opening = balNum; openingNote = '期初（首行余额）'; firstDataRow = false;
+      continue;
+    }
+    if(opening == null && firstDataRow && !qty && !price && amtNum == null && payNum == null && balNum == null && name && /^\d+(\.\d+)?$/.test(name)){
+      opening = toNum(name); openingNote = '期初'; firstDataRow = false;
+      continue;
+    }
+    firstDataRow = false;
+    // ③ 汇总/小计/止 行：金额/单价/数量列是「X月小计/总计/…止」等文字标记，
+    //    或小计列有值但本行无数量单价金额（如残留行「0:'44' 6:'720'」）。
+    //    注意「2023年加工费」这类付款标记行不被 ^\d{4}年 拦（只拦纯「2023年」或「2023年货款/总账/…止」）
+    const isLabel = /小计|小结|总计|一共|共计|汇总|累计|总付款|总退货|止$|^\d{1,2}月$|^\d{4}年$|^\d{4}年(货款|总账|小计|合计|止|余额|底)/.test(amtRaw + '|' + price + '|' + qty + '|' + dateRaw + '|' + name);
+    if(isLabel || (subVal && !qty && !price && amtNum == null)) continue;
+    // ③.5 日期列为纯中文文字标签（如汇总行「0:'退货' 1:'37' 5:'91130'」）→ 跳过
+    if(dateRaw && !/\d/.test(dateRaw) && /[\u4e00-\u9fa5]/.test(dateRaw)) continue;
+    // ④ 退货行：名称/备注/金额列含「退货/退款」（金额可取自金额列或付款列，缺省 qty×price）
+    if(/退货|退款/.test(name + '|' + note + '|' + amtRaw)){
+      let amt = amtNum != null ? String(amtNum) : (payNum != null ? String(payNum) : '');
+      if(!amt && qty && price){ const v = toNum(qty) * toNum(price); if(isFinite(v)) amt = String(v); }
+      returns.push({ id: uid(), date: dateRaw ? cleanDate(dateRaw) : lastDate, name: name || '退货', unit: g(idx.unit) || '付', qty, price, amt, note });
+      continue;
+    }
+    // ④.5 日期列为纯数字残留（合并单元格残留如 '20'/'44'/'485'）且无数量单价金额名称 → 汇总/残留行跳过
+    if(dateRaw && /^\d{1,3}$/.test(dateRaw) && !qty && !price && amtNum == null && !name) continue;
+    // ⑤ 付款行：无单价/数量/金额（金额为空、无价格、无数量）。付款值：付款列 → 否则行内
+    //    （跳过日期/余额/小计/金额列）第一个数字。期初/付款常写在名称列（「2025.1.25 | 10000 | … | 43773」）
+    //    或单位列（「2022整年|加工费|13000」）；而「FTA298返修 2000 件无单价」是货款行（有数量）不进 ⑤
+    if(amtNum == null && !price && !qty){
+      let pv = payNum;
+      if(pv == null){
+        // 名称列为纯数字 → 期初/付款值（「2025.1.25 | 10000 | … | 43773」）；
+        // 否则在行内（跳过日期/余额/小计/金额/名称列）找第一个数字（「2022整年|加工费|13000」付款在单位列）
+        if(name && /^\d+(\.\d+)?$/.test(name)){ pv = toNum(name); }
+        else{
+          for(let c = 0; c < row.length; c++){
+            if(c === idx.date || c === idx.balance || c === idx.subtotal || c === idx.amount || c === idx.name) continue;
+            const n = toNum(g(c));
+            if(n != null){ pv = n; break; }
+          }
+        }
+      }
+      if(pv != null){
+        payments.push({ id: uid(), date: (dateRaw && /\d{4}/.test(dateRaw)) ? cleanDate(dateRaw) : lastDate, amount: String(pv), note: (name && /[\u4e00-\u9fa5]/.test(name)) ? name : note });
+        continue;
+      }
+    }
+    // ⑥ 空行
+    if(!name && !qty && !price && amtNum == null && payNum == null && balNum == null) continue;
+    // ⑥.5 有名称但无数量/单价/金额 → 备注/标记行跳过（避免「要配脚」等备注变空货款行）
+    if(name && !qty && !price && !amtNum) continue;
+    // ⑦ 金额/数量/单价列为文字 → 原表不计账，跳过（作废/补数/不计账/月份标记等）
+    if(amtRaw && /[\u4e00-\u9fa5]/.test(amtRaw)) continue;
+    if(qty && /[\u4e00-\u9fa5]/.test(qty)) continue;
+    if(price && /[\u4e00-\u9fa5]/.test(price)) continue;
+    // ⑧ 日期继承：含 4 位年份才作日期，否则视为残留/空（合并单元格继承上一行）
+    const date = (dateRaw && /\d{4}/.test(dateRaw)) ? (lastDate = cleanDate(dateRaw), cleanDate(dateRaw)) : lastDate;
+    // ⑨ 普通货款行
+    goods.push({ id: uid(), date, name: name, unit: g(idx.unit) || '付', qty, price, amt: amtNum != null ? String(amtNum) : '', waybill: g(idx.waybill), note });
   }
-  return rows;
+  return { goods, payments, returns, opening, openingNote };
 }
-function parseReturnsSheet(grid, headerRow){
-  const idx = headerIdx(headerRow);
+function parseReturnsSheet(grid, headerRow, idx){
   const start = gridIndexOf(grid, headerRow) + 1;
   const rows = [];
   let lastDate = '';
@@ -868,8 +992,10 @@ function parseReturnsSheet(grid, headerRow){
     const name = g(idx.name), dateRaw = g(idx.date);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
-    if(/共计|总计/.test(dateRaw + '|' + name + '|' + grid[r].join('|'))) continue;
-    if(amtRaw && /[\u4e00-\u9fa5]/.test(amtRaw)) continue; // 金额列为文字 → 跳过
+    // 日期列为纯中文文字标签（如汇总行「0:'退货' 1:'37' 5:'91130'」）→ 跳过
+    if(dateRaw && !/\d/.test(dateRaw) && /[\u4e00-\u9fa5]/.test(dateRaw)) continue;
+    if(/共计|总计|合计|累计/.test(dateRaw + '|' + name + '|' + grid[r].join('|'))) continue;
+    if(amtRaw && /[\u4e00-\u9fa5]/.test(amtRaw)) continue;
     if(!name && !qty && !price && amtNum == null) continue;
     if(dateRaw) lastDate = cleanDate(dateRaw);
     const date = dateRaw ? cleanDate(dateRaw) : lastDate;
@@ -877,15 +1003,26 @@ function parseReturnsSheet(grid, headerRow){
   }
   return rows;
 }
-function parsePaymentsSheet(grid, headerRow){
-  const idx = headerIdx(headerRow);
+function parsePaymentsSheet(grid, headerRow, idx){
   const start = gridIndexOf(grid, headerRow) + 1;
   const rows = [];
   for(let r = start; r < grid.length; r++){
-    const g = (i) => (i == null || grid[r][i] == null) ? '' : String(grid[r][i]).trim();
+    const row = grid[r];
+    const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
     const date = g(idx.date);
-    const payRaw = g(idx.pay), payNum = toNum(payRaw);
-    if(/总计/.test(date + '|' + grid[r].join('|'))) continue;
+    if(/总计|合计|累计/.test(date + '|' + row.join('|'))) continue;
+    // 付款数据行必须日期列含 4 位年份（每笔付款都有日期）；日期列为残留数字/空 → 汇总行跳过
+    //（如 ea92690e 付款表末行「0:'485' 2:'1394304'」= 总计行，日期列是残留单号）
+    if(!/^\d{4}[./年-]/.test(date)) continue;
+    // 付款值：优先付款列；表头与数据行列数错位（如表头「日期|空|空|付款|余额」数据行「日期|50000」）时，
+    // 取日期列右侧第一个数字兜底
+    let payNum = toNum(g(idx.pay));
+    if(payNum == null){
+      for(let c = (idx.date != null ? idx.date : 0) + 1; c < row.length; c++){
+        const n = toNum(g(c));
+        if(n != null){ payNum = n; break; }
+      }
+    }
     if(payNum == null) continue;
     rows.push({ id: uid(), date: cleanDate(date), amount: String(payNum), note: '' });
   }
@@ -928,10 +1065,17 @@ async function parseImportXlsx(bytes){
     if(!xmlStr) continue;
     const grid = sheetToGrid(xmlStr, shared);
     const header = sheetHeaderRow(grid);
-    const type = classifySheet(s.name, header);
-    if(type === 'goods') result.goods = result.goods.concat(parseGoodsSheet(grid, header));
-    else if(type === 'returns') result.returns = result.returns.concat(parseReturnsSheet(grid, header));
-    else if(type === 'payments') result.payments = result.payments.concat(parsePaymentsSheet(grid, header));
+    const idx = detectHeader(header);
+    const type = classifySheet(s.name, header, idx);
+    if(type === 'goods'){
+      const d = parseDetailSheet(grid, header, idx);
+      result.goods = result.goods.concat(d.goods);
+      result.payments = result.payments.concat(d.payments);
+      result.returns = result.returns.concat(d.returns);
+      if(result.opening == null && d.opening != null){ result.opening = d.opening; result.openingNote = d.openingNote; }
+    }
+    else if(type === 'returns') result.returns = result.returns.concat(parseReturnsSheet(grid, header, idx));
+    else if(type === 'payments') result.payments = result.payments.concat(parsePaymentsSheet(grid, header, idx));
     else if(type === 'summary'){ const o = extractOpening(grid); if(o){ result.opening = o.opening; result.openingNote = o.note; } }
   }
   if(!result.goods.length && !result.payments.length && !result.returns.length){
@@ -1170,6 +1314,8 @@ function buildXlsxFiles(){
   const byYear = new Map();
   for(const g of groups){ const y = yearOf(g.key); if(!byYear.has(y)) byYear.set(y, []); byYear.get(y).push(g); }
   const years = [...byYear.keys()].sort((a, b) => (a == null ? 1e9 : a) - (b == null ? 1e9 : b));
+  const balSer = balanceSeries();
+  const gIdx = new Map(); state.goods.forEach((r, i) => gIdx.set(r.id, i));
   for(const y of years){
     const gg = byYear.get(y);
     const rows = [];
@@ -1180,20 +1326,21 @@ function buildXlsxFiles(){
         if(a != null) ms += a;
         const d = parseDateParts(r.date);
         const dateTxt = d ? d.y + '.' + (d.mo || '') + (d.d ? '.' + d.d : '') : r.date;
-        rows.push([dateTxt, r.name, r.unit || '', n(toNum(r.qty)), n(toNum(r.price)), n(a), '', r.waybill || '', r.note || '']);
+        const bal = balSer.map.get(gIdx.get(r.id));
+        rows.push([dateTxt, r.name, r.unit || '', n(toNum(r.qty)), n(toNum(r.price)), n(a), bal == null ? null : n(bal), '', r.waybill || '', r.note || '']);
       }
       if(g.key != null && g.key % 100 !== 0){
-        rows.push([null, null, null, null, null, g.label + '小计', n(ms), null, null]);
+        rows.push([null, null, null, null, null, g.label + '小计', null, n(ms), null, null]);
       }
     }
     const ytList = yt.filter(t => t.year === y);
     for(const t of ytList){
-      rows.push([t.year + '年货款', '总计', null, null, null, null, n(t.total), null, null]);
+      rows.push([t.year + '年货款', '总计', null, null, null, null, null, n(t.total), null, null]);
     }
     const sheetName = (y == null ? '未标注日期货款' : y + '年货款');
     sheets.push({
       name: sheetName,
-      spec: { title: (y == null ? state.partyA + '与' + state.partyB + '的货款（未标注日期）' : y + '年' + state.partyA + '与' + state.partyB + '的对账单'), sub: state.cutoffNote || '', headers: ['日期', '名称及规格', '单位', '数量', '单价', '金额', '小计', '发货单号', '备注'], rows, colCount: 9, widths: [13, 22, 8, 10, 10, 12, 12, 14, 16] }
+      spec: { title: (y == null ? state.partyA + '与' + state.partyB + '的货款（未标注日期）' : y + '年' + state.partyA + '与' + state.partyB + '的对账单'), sub: state.cutoffNote || '', headers: ['日期', '名称及规格', '单位', '数量', '单价', '金额', '余额', '小计', '发货单号', '备注'], rows, colCount: 10, widths: [13, 22, 8, 10, 10, 12, 12, 12, 14, 16] }
     });
   }
 
@@ -1340,7 +1487,7 @@ window.__duizhangImportTest = async function(b64, mode){
     { key:'price', label:'单价', ph:'0.00', cls:'num' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
-  renderEditor(state.goods, G_FIELDS, 'amount', document.getElementById('goodsEditor'));
+  renderEditor(state.goods, G_FIELDS, 'amount', document.getElementById('goodsEditor'), balanceByIdMap());
   renderEditor(state.payments, FIELDS_P, 'amount', document.getElementById('paymentsEditor'));
   renderEditor(state.returns, FIELDS_R, 'amount', document.getElementById('returnsEditor'));
   renderAllPreviews();
