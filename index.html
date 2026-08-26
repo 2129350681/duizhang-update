@@ -247,7 +247,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.15';
+const APP_VERSION = 'v2.16';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -342,7 +342,9 @@ function selectCustomer(id){
   if(!db.customers[id] || id === db.current) return;
   save();
   db.current = id; state = db.customers[id];
-  syncSettingsInputs(); renderCustomerSelector(); renderAllPreviews(); save();
+  syncSettingsInputs(); renderCustomerSelector();
+  rerenderEditors(); // 编辑器表格重渲染为当前客户的数据（防止残留旧客户表格）
+  renderAllPreviews(); save();
 }
 function addCustomerFlow(){
   const name = (prompt('请输入新客户名称（即乙方/购货方）：') || '').trim();
@@ -350,7 +352,9 @@ function addCustomerFlow(){
   if(customerList().some(c => c.partyB === name) && !confirm('已存在同名客户「' + name + '」，仍然新建？')) return;
   const c = newCustomerObj(name);
   db.customers[c.id] = c; db.current = c.id; state = c;
-  save(); renderCustomerSelector(); syncSettingsInputs(); renderAllPreviews();
+  save(); renderCustomerSelector(); syncSettingsInputs();
+  rerenderEditors(); // 新客户空白表格立即渲染
+  renderAllPreviews();
   document.getElementById('partyA').value = DEFAULT_PARTY_A; // 甲方默认许道丰
   const pb = document.getElementById('partyB'); if(pb) pb.focus();
 }
@@ -370,7 +374,18 @@ function deleteCustomerFlow(){
   if(!ids.length){ db = freshDb(); }
   db.current = ids.length ? ids[0] : db.current;
   state = db.customers[db.current];
-  save(); renderCustomerSelector(); syncSettingsInputs(); renderAllPreviews();
+  save(); renderCustomerSelector(); syncSettingsInputs();
+  rerenderEditors(); // 删除后编辑器对齐到当前客户
+  renderAllPreviews();
+}
+/* 顶层可访问的编辑器重渲染：客户切换/新建/删除后调用，让表格 DOM 与当前客户对齐 */
+function rerenderEditors(){
+  const ge = document.getElementById('goodsEditor');
+  if(ge) renderEditor(state.goods, ge.__fields || G_FIELDS, 'amount', ge, balanceByIdMap());
+  const pe = document.getElementById('paymentsEditor');
+  if(pe) renderEditor(state.payments, pe.__fields || G_FIELDS, 'amount', pe);
+  const re = document.getElementById('returnsEditor');
+  if(re) renderEditor(state.returns, re.__fields || G_FIELDS, 'amount', re);
 }
 
 /* ================= 分组与汇总 ================= */
@@ -443,6 +458,7 @@ function syncEditorFromDom(rows, tableEl){
   // Android WebView 软键盘输入时 input 事件可能不派发，导致 state 未更新、
   // 任何重渲染都会把用户输入覆盖掉。以 DOM 为唯一真相，渲染/导出前先同步。
   if(!rows || !tableEl || !tableEl.querySelectorAll) return;
+  if(tableEl.dataset.owner !== db.current) return; // DOM 属于其他客户（切换后残留），禁止写回当前客户
   const byId = new Map();
   for(const r of rows) byId.set(r.id, r);
   const inputs = tableEl.querySelectorAll('input[data-id]');
@@ -485,12 +501,17 @@ function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   });
   html += '</tbody>';
   tableEl.innerHTML = html;
+  tableEl.dataset.owner = db.current || ''; // 标记该表格当前属于哪个客户，切换客户后残留 DOM 不再被同步
+  tableEl.__rows = rows; // 事件处理器动态取当前渲染的行数组（切换客户后指向新客户的数组）
 }
 function bindEditor(tableEl, rows, amountKey, onChange){
+  if(tableEl.__bound) return; // 防重复绑定：切换客户只重渲染不重绑，处理器动态取当前渲染的行
+  tableEl.__bound = true;
+  const currentRows = () => tableEl.__rows || [];
   function handleFieldInput(e){
     const t = e.target;
     if(!t || !t.dataset || !t.dataset.id) return;
-    const r = rows.find(x => x.id === t.dataset.id);
+    const r = currentRows().find(x => x.id === t.dataset.id);
     if(!r) return;
     r[t.dataset.field] = t.value;
     if((t.dataset.field === 'qty' || t.dataset.field === 'price') && toNum(r.amt) != null){ r.amt = ''; } // 手动改数量/单价即解锁导入锁定的金额
@@ -509,6 +530,7 @@ function bindEditor(tableEl, rows, amountKey, onChange){
   tableEl.addEventListener('click', e => {
     const btn = e.target.closest('[data-del]');
     if(!btn) return;
+    const rows = currentRows();
     const i = rows.findIndex(x => x.id === btn.dataset.del);
     if(i >= 0) rows.splice(i, 1);
     save();
