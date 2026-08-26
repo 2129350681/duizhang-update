@@ -7,7 +7,7 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #eef1f5; color: #2b2f36; font-size: 14px; }
-  header { background: linear-gradient(135deg, #1f6feb, #2ea0ff); color: #fff; padding: 22px 28px; }
+  header { background: linear-gradient(135deg, #1f6feb, #2ea0ff); color: #fff; padding: 22px 150px 22px 28px; }
   header h1 { font-size: 22px; margin-bottom: 6px; }
   .version-badge { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 9px; border-radius: 11px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.55); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .5px; line-height: 1.5; }
   header p { font-size: 13px; opacity: .92; }
@@ -113,16 +113,18 @@
     #printArea .sheet-title { font-size: 16px; }
   }
   /* ===== 回到顶部（回首页）浮动按钮：常驻右下角小圆钮，点击平滑回顶 ===== */
-  .back-top{position:fixed;right:16px;bottom:88px;width:46px;height:46px;border-radius:50%;border:none;background:rgba(59,130,246,.85);color:#fff;font-size:22px;line-height:1;cursor:pointer;z-index:999;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.25);opacity:.8;transition:opacity .2s;-webkit-tap-highlight-color:transparent}
+  .back-top{position:fixed;right:10px;top:14px;width:46px;height:46px;border-radius:50%;border:none;background:rgba(59,130,246,.85);color:#fff;font-size:22px;line-height:1;cursor:pointer;z-index:999;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.25);opacity:.8;transition:opacity .2s;-webkit-tap-highlight-color:transparent}
   .back-top:hover{opacity:1}
   .back-top:active{transform:scale(.92)}
-  body.large-mode .back-top{width:56px;height:56px;font-size:27px;right:14px;bottom:96px}
-  @media (max-width:640px){.back-top{bottom:70px}}
+  body.large-mode header{padding-right:165px}
+  body.large-mode .back-top{width:56px;height:56px;font-size:27px;right:10px;top:12px}
+  @media (max-width:640px){header{padding-right:118px}}
+  @media (max-width:640px){.back-top{top:10px}}
   /* ===== AI 助手（本地智能版） ===== */
-  .ai-fab{position:fixed;right:16px;bottom:140px;width:52px;height:52px;border-radius:50%;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:24px;cursor:pointer;z-index:998;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(99,102,241,.45);-webkit-tap-highlight-color:transparent}
+  .ai-fab{position:fixed;right:70px;top:12px;width:52px;height:52px;border-radius:50%;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:24px;cursor:pointer;z-index:998;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(99,102,241,.45);-webkit-tap-highlight-color:transparent}
   .ai-fab:active{transform:scale(.92)}
-  body.large-mode .ai-fab{width:62px;height:62px;font-size:28px;right:14px;bottom:158px}
-  @media (max-width:640px){.ai-fab{bottom:122px}}
+  body.large-mode .ai-fab{width:62px;height:62px;font-size:28px;right:74px;top:10px}
+  @media (max-width:640px){.ai-fab{right:66px;top:10px}}
   .ai-chat{width:92vw;max-width:480px;height:76vh;max-height:640px;display:flex;flex-direction:column;border-radius:14px;overflow:hidden}
   .ai-chat-head{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:10px 14px;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex:none}
   .ai-chat-head button{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
@@ -340,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.38';
+const APP_VERSION = 'v2.39';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
