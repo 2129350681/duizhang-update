@@ -474,7 +474,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.50';
+const APP_VERSION = 'v2.51';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1861,6 +1861,9 @@ function setup(){
     if(state.returns.length){ h += document.getElementById('returnsPreview').innerHTML; }
     h += document.getElementById('summaryPreview').innerHTML;
     h += '</body></html>';
+    // 打印内容净化：去除任何 script 块 + 长度上限，防止打印视图执行非预期脚本
+    h = h.replace(/<script[\s\S]*?<\/script>/gi, '');
+    if(h.length > 400000){ h = h.slice(0, 400000); }
     if(window.AndroidBridge && typeof AndroidBridge.printHtml === 'function'){
       AndroidBridge.printHtml(h);
     } else {
