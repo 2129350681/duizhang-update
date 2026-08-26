@@ -255,14 +255,24 @@
 </div>
 
 
-<!-- 选名称弹窗（常用名称大按钮 + 搜索，老年友好免打字） -->
+<!-- 选名称弹窗（全程序产品搜索 + 手动新增产品，老年友好免打字） -->
 <div class="modal-mask" id="namePickerModal">
   <div class="modal">
     <h3>📇 选常用名称</h3>
-    <p style="font-size:13px;color:#667;margin-bottom:4px">输入一个字就能搜，点名称填到最新一行（带出的单价可改）。</p>
+    <p style="font-size:13px;color:#667;margin-bottom:4px">包含所有客户录过的产品名，输入一个字就能搜，点名称填到最新一行（带出的单价可改）。</p>
     <input id="namePickerSearch" class="name-picker-search" type="text" placeholder="🔍 输入一个字搜索（如：脚、KT）" autocomplete="off">
     <div id="namePickerGrid" class="name-picker-grid"></div>
+    <div id="addProductForm" class="add-product-form" style="display:none">
+      <p style="font-size:13px;color:#667;margin-bottom:6px">新增常用产品（以后搜索/点选都能找到）：</p>
+      <input id="addProductName" class="name-picker-search" type="text" placeholder="产品名称（必填）" autocomplete="off">
+      <input id="addProductPrice" class="name-picker-search" type="text" inputmode="decimal" placeholder="单价（可留空）" autocomplete="off">
+      <div class="modal-actions" style="justify-content:center">
+        <button id="addProductOk" class="primary">保存</button>
+        <button id="addProductCancel">返回</button>
+      </div>
+    </div>
     <div class="modal-actions">
+      <button id="namePickerAdd">➕ 新增产品</button>
       <button id="namePickerCancel">取消</button>
     </div>
   </div>
@@ -293,7 +303,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.27';
+const APP_VERSION = 'v2.28';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -311,11 +321,30 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
-/* 老年友好：常用名称库（统计货款+退货记录：{key(小写):{name:最近写法, price:最近单价, count:次数}}），
-   供选名称弹窗与单价自动记忆使用；每次输入的名称保存后都会被记住，按出现频率排序 */
+/* 自定义产品库（localStorage 独立键，所有客户通用）：人为预录常用产品，方便后续搜索点选 */
+function getCustomProducts(){
+  try{
+    const raw = localStorage.getItem('duizhang-custom-products');
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter(x => x && String(x.name || '').trim()) : [];
+  }catch(_){ return []; }
+}
+function saveCustomProducts(list){
+  try{ localStorage.setItem('duizhang-custom-products', JSON.stringify(list)); }catch(_){}
+}
+/* 老年友好：常用名称库（统计**所有客户**的货款+退货 + 自定义产品：{key(小写):{name, price, count, bestCount, names}}），
+   供选名称弹窗与单价自动记忆使用；按出现频率排序，单价取历史最高，人为可改 */
 function nameLib(){
   const lib = {};
-  const rows = state.goods.concat(state.returns);
+  const rows = [];
+  try{
+    for(const cid of Object.keys(db.customers || {})){
+      const c = db.customers[cid];
+      if(!c) continue;
+      rows.push(...(c.goods || []), ...(c.returns || []));
+    }
+  }catch(_){}
   for(const r of rows){
     const n = String(r.name || '').trim();
     if(!n) continue;
@@ -330,14 +359,31 @@ function nameLib(){
       if(cur == null || p > cur) lib[key].price = String(r.price); // 单价记忆取历史最高（人为填进后仍可改）
     }
   }
+  for(const cp of getCustomProducts()){ // 人为新增的产品：count 0 排在统计产品之后
+    const n = String(cp.name || '').trim();
+    if(!n) continue;
+    const key = n.toLowerCase();
+    if(!lib[key]) lib[key] = { name: n, price:'', count:0, bestCount:0, names: {} };
+    if(cp.price && toNum(cp.price) != null){
+      const p = toNum(cp.price);
+      const cur = lib[key].price ? toNum(lib[key].price) : null;
+      if(cur == null || p > cur) lib[key].price = String(cp.price);
+    }
+  }
   return lib;
 }
+let __namePickerOnPick = null; // 选名称弹窗当前点选回调（供「新增产品」保存后重开弹窗复用）
 /* 打开「选常用名称」弹窗：按出现频率从多到少排大按钮，搜索框输入一个字即时过滤，点选后回调 (name, price) */
 function openNamePicker(onPick){
   const modal = document.getElementById('namePickerModal');
   const grid = document.getElementById('namePickerGrid');
   const search = document.getElementById('namePickerSearch');
   if(!modal || !grid) return;
+  __namePickerOnPick = onPick;
+  const addForm = document.getElementById('addProductForm');
+  if(addForm) addForm.style.display = 'none'; // 收起「新增产品」表单（重开时回到列表）
+  if(search) search.style.display = '';
+  grid.style.display = '';
   const lib = nameLib();
   const allKeys = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh')); // 频率优先，同频率按拼音
   function render(filter){
@@ -1027,6 +1073,43 @@ function setup(){
   document.getElementById('pickNameReturns').addEventListener('click', pickNameToReturns);
   document.getElementById('namePickerCancel').addEventListener('click', () => namePickerModal.classList.remove('show'));
   namePickerModal.addEventListener('click', e => { if(e.target === namePickerModal) namePickerModal.classList.remove('show'); });
+
+  // 人为新增常用产品（保存后下次搜索/点选都能找到）
+  const addProductForm = document.getElementById('addProductForm');
+  function hideNamePickerParts(){
+    const grid2 = document.getElementById('namePickerGrid'), search2 = document.getElementById('namePickerSearch');
+    if(grid2) grid2.style.display = 'none';
+    if(search2) search2.style.display = 'none';
+    const p = namePickerModal.querySelector('p');
+    if(p) p.style.display = 'none';
+  }
+  document.getElementById('namePickerAdd').addEventListener('click', () => {
+    hideNamePickerParts();
+    if(addProductForm) addProductForm.style.display = 'block';
+    setTimeout(() => { try{ document.getElementById('addProductName').focus(); }catch(_){} }, 50);
+  });
+  document.getElementById('addProductOk').addEventListener('click', () => {
+    const nm = document.getElementById('addProductName').value.trim();
+    const pr = document.getElementById('addProductPrice').value.trim();
+    if(!nm){ try{ document.getElementById('addProductName').focus(); }catch(_){} return; }
+    const list = getCustomProducts();
+    list.push({ name: nm, price: pr });
+    saveCustomProducts(list);
+    document.getElementById('addProductName').value = '';
+    document.getElementById('addProductPrice').value = '';
+    if(addProductForm) addProductForm.style.display = 'none';
+    if(__namePickerOnPick) openNamePicker(__namePickerOnPick); // 重开弹窗：新产品已在列表
+  });
+  document.getElementById('addProductCancel').addEventListener('click', () => {
+    document.getElementById('addProductName').value = '';
+    document.getElementById('addProductPrice').value = '';
+    if(addProductForm) addProductForm.style.display = 'none';
+    const grid2 = document.getElementById('namePickerGrid'), search2 = document.getElementById('namePickerSearch');
+    if(grid2) grid2.style.display = '';
+    if(search2) search2.style.display = '';
+    const p = namePickerModal.querySelector('p');
+    if(p) p.style.display = '';
+  });
 
   // 大字模式（localStorage 持久化，刷新/重开保持）
   const largeModeEl = document.getElementById('largeMode');
