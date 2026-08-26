@@ -39,6 +39,8 @@
   button.danger { color: #c0392b; border-color: #e5b8b2; }
   button.danger:hover { background: #fdf0ee; }
   .table-wrap { overflow-x: auto; border: 1px solid #e2e6ec; border-radius: 8px; }
+  .add-row-bottom { margin-top: 10px; width: 100%; padding: 10px; background: #f7f9fc; border: 1px dashed #b8c2cf; color: #1f6feb; font-size: 14px; border-radius: 8px; }
+  .add-row-bottom:hover { background: #eef2f7; border-color: #1f6feb; }
   table.editor { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.editor th { background: #f2f5f9; padding: 8px 6px; text-align: left; border-bottom: 1px solid #d4d9e0; white-space: nowrap; font-weight: 600; }
   table.editor td { border-bottom: 1px solid #eef1f5; padding: 3px 4px; }
@@ -130,12 +132,12 @@
   <section id="tab-goods" class="tab active">
     <div class="card">
       <div class="toolbar">
-        <button id="addGoods">＋ 添加一行</button>
         <button id="pasteGoods">📋 批量粘贴</button>
         <button id="clearGoods" class="danger">清空货款</button>
         <span class="hint">数量/单价任意一项留空则该行不计入小计；备注可写「余量16付」「要配脚」等说明。</span>
       </div>
       <div class="table-wrap"><table class="editor" id="goodsEditor"></table></div>
+      <button id="addGoods" class="add-row-bottom">＋ 添加一行</button>
       <div class="preview" id="goodsPreview"></div>
     </div>
   </section>
@@ -144,12 +146,12 @@
   <section id="tab-payments" class="tab">
     <div class="card">
       <div class="toolbar">
-        <button id="addPayment">＋ 添加一行</button>
         <button id="pastePayments">📋 批量粘贴</button>
         <button id="clearPayments" class="danger">清空付款</button>
         <span class="hint">付款流水：日期 + 付款金额（备注选填）。余额列会自动累计。</span>
       </div>
       <div class="table-wrap"><table class="editor" id="paymentsEditor"></table></div>
+      <button id="addPayment" class="add-row-bottom">＋ 添加一行</button>
       <div class="preview" id="paymentsPreview"></div>
     </div>
   </section>
@@ -158,12 +160,12 @@
   <section id="tab-returns" class="tab">
     <div class="card">
       <div class="toolbar">
-        <button id="addReturn">＋ 添加一行</button>
         <button id="pasteReturns">📋 批量粘贴</button>
         <button id="clearReturns" class="danger">清空退货</button>
         <span class="hint">退货记录：日期 + 名称 + 数量 + 单价，金额自动计算，底部自动出「退货共计」。</span>
       </div>
       <div class="table-wrap"><table class="editor" id="returnsEditor"></table></div>
+      <button id="addReturn" class="add-row-bottom">＋ 添加一行</button>
       <div class="preview" id="returnsPreview"></div>
     </div>
   </section>
@@ -245,7 +247,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.14';
+const APP_VERSION = 'v2.15';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
