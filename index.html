@@ -245,7 +245,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.12';
+const APP_VERSION = 'v2.13';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1055,10 +1055,11 @@ function parseDetailSheet(grid, headerRow, idx){
     }
     // ④.5 日期列为纯数字残留（合并单元格残留如 '20'/'44'/'485'）且无数量单价金额名称 → 汇总/残留行跳过
     if(dateRaw && /^\d{1,3}$/.test(dateRaw) && !qty && !price && amtNum == null && !name) continue;
-    // ⑤ 付款行：无单价/数量/金额（金额为空、无价格、无数量）。付款值：付款列 → 否则行内
+    // ⑤ 付款行：金额列为空 且（付款列有值，或无单价/数量/金额）。付款值：付款列 → 否则行内
     //    （跳过日期/余额/小计/金额列）第一个数字。期初/付款常写在名称列（「2025.1.25 | 10000 | … | 43773」）
-    //    或单位列（「2022整年|加工费|13000」）；而「FTA298返修 2000 件无单价」是货款行（有数量）不进 ⑤
-    if(amtNum == null && !price && !qty){
+    //    或单位列（「2022整年|加工费|13000」）；「FTA298返修 2000 件无单价」是货款行（有数量）不进 ⑤；
+    //    「脚套三木自弄 200×1 金额列空、付款列 200」（三木眼镜）→ 源表余额流按付款扣减，也判付款
+    if(amtNum == null && (payNum != null || (!price && !qty))){
       let pv = payNum;
       if(pv == null){
         // 名称列为纯数字 → 期初/付款值（「2025.1.25 | 10000 | … | 43773」）；
