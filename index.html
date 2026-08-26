@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.44';
+const APP_VERSION = 'v2.45';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2081,6 +2081,7 @@ function parseSummarySheet(grid, headerRow, idx){
   let lastDate = '';
   let opening = null, openingNote = '';
   let ending = null; // 总账余额列最后一个非空值 = 源表期末
+  let totalGoods = null, totalPay = null, totalRet = null, receivable = null; // 汇总型总账的总计行
   let nameCol = idx.name;
   if(nameCol == null && idx.date != null) nameCol = idx.date + 1; // 总账名称列无表头名
   for(let r = start; r < grid.length; r++){
@@ -2103,6 +2104,25 @@ function parseSummarySheet(grid, headerRow, idx){
       }
       if(pv != null && opening == null){ opening = pv; openingNote = name || dateRaw || note || '期初'; }
       continue;
+    }
+    // ①.5 汇总型总账的总计行（「累计总货款/总付款/总退货/应收余额」写在日期列；值在各计数列）
+    //    这些行不是逐笔明细，绝不能当付款/退货计入（否则与明细表双重计入）
+    const label = name || dateRaw;
+    if(/累计总货款|总货款|总金额/.test(label)){
+      totalGoods = amtNum != null ? amtNum : (balNum != null ? balNum : totalGoods);
+      if(balNum != null) ending = balNum; continue;
+    }
+    if(/总付款/.test(label)){
+      totalPay = payNum != null ? payNum : (amtNum != null ? amtNum : totalPay);
+      if(balNum != null) ending = balNum; continue;
+    }
+    if(/总退货/.test(label)){
+      totalRet = amtNum != null ? amtNum : (payNum != null ? payNum : totalRet);
+      if(balNum != null) ending = balNum; continue;
+    }
+    if(/应收余额/.test(label)){
+      receivable = balNum != null ? balNum : (amtNum != null ? amtNum : receivable);
+      if(balNum != null) ending = balNum; continue;
     }
     // ② 退货行：名称含「退货/退款」，或名称是产品名（非 开票/刷卡/微信/现金/转账/税金/空）且付款列有值。
     //    总账的扣减列只有一列（index 7）：付款（开票/刷卡/微信/空名）与退货（产品名，如「退货长脚套」「铁头子脚套」）混在同一列
@@ -2140,7 +2160,7 @@ function parseSummarySheet(grid, headerRow, idx){
     if(balNum != null) ending = balNum; // 追踪总账期末（余额列最后值）
     if(dateRaw) lastDate = cleanDate(dateRaw);
   }
-  return { goods, payments, returns, opening, openingNote, ending };
+  return { goods, payments, returns, opening, openingNote, ending, totalGoods, totalPay, totalRet, receivable };
 }
 function extractOpening(grid){
   for(const row of grid){
@@ -2221,6 +2241,12 @@ async function parseImportXlsx(bytes){
       if(d.ending != null) result.__summaryEnding = d.ending;
       result.__summaryReturns = result.__summaryReturns.concat(d.returns);
       result.__summaryPayments = result.__summaryPayments.concat(d.payments); // 总账付款（供自检：明细缺失时自动补齐）
+      // 汇总型总账的总计行（累计总货款/总付款/总退货/应收余额）→ 作为总账权威值供逐项核对
+      result.__summaryTotals = result.__summaryTotals || {};
+      if(d.totalGoods != null) result.__summaryTotals.totalGoods = d.totalGoods;
+      if(d.totalPay != null) result.__summaryTotals.totalPay = d.totalPay;
+      if(d.totalRet != null) result.__summaryTotals.totalRet = d.totalRet;
+      if(d.receivable != null) result.__summaryTotals.receivable = d.receivable;
       // 总账的付款/退货只与「其他 sheet」去重（同指纹只留一条）——不能对总账内部去重：
       // 同日同金额的多笔付款（如 2025.1.25 开票 50000 + 刷卡 50000）指纹相同但都是有效付款
       const pf = new Set(result.payments.map(r => rowFp(r, 'payments')));
@@ -2268,21 +2294,36 @@ async function parseImportXlsx(bytes){
         }
       }
     }
-    // ③ 期末复核 + 差异分析
+    // ③ 期末复核 + 差异分析（有总账必输出：diff=0 显示「已核对一致」，不一致显示各项差额）
     const diff = Math.round((result.__summaryEnding - ending) * 100) / 100;
-    if(Math.abs(diff) > 0.01 || excluded.length || addedPay.length){
+    // ③.5 汇总型总账逐项对比（总账权威值 vs 程序逐笔合计 → 指出「问题出在哪一项」）
+    const t = result.__summaryTotals || {};
+    const round2 = (x) => Math.round(x * 100) / 100;
+    const itemDiffs = [];
+    const gSum = sum(result.goods, 'amt'), pSum = sum(result.payments, 'amount'), rSum = sum(result.returns, 'amt');
+    if(t.totalGoods != null && Math.abs(t.totalGoods - gSum) > 0.01) itemDiffs.push({ key: '货款', book: t.totalGoods, calc: round2(gSum) });
+    if(t.totalPay != null && Math.abs(t.totalPay - pSum) > 0.01) itemDiffs.push({ key: '付款', book: t.totalPay, calc: round2(pSum) });
+    if(t.totalRet != null && Math.abs(t.totalRet - rSum) > 0.01) itemDiffs.push({ key: '退货', book: t.totalRet, calc: round2(rSum) });
+    if(t.receivable != null){
+      const rec = (result.opening || 0) + gSum;
+      if(Math.abs(t.receivable - rec) > 0.01) itemDiffs.push({ key: '应收余额', book: t.receivable, calc: round2(rec) });
+    }
+    if(Math.abs(diff) > 0.01 || excluded.length || addedPay.length || itemDiffs.length){
       result.selfCheck = {
         ending: result.__summaryEnding,
         computedEnding: Math.round(ending * 100) / 100,
-        diff, suspicious, excluded: excluded.length, addedPay: addedPay.length,
+        diff, suspicious, excluded: excluded.length, addedPay: addedPay.length, itemDiffs,
         // 各项对比（供用户核对差异来源）
         sums: {
-          opening: result.opening != null ? Math.round(toNum(result.opening) * 100) / 100 : null,
-          goods: Math.round(sum(result.goods, 'amt') * 100) / 100,
-          payments: Math.round(sum(result.payments, 'amount') * 100) / 100,
-          returns: Math.round(sum(result.returns, 'amt') * 100) / 100,
+          opening: result.opening != null ? round2(toNum(result.opening)) : null,
+          goods: round2(gSum),
+          payments: round2(pSum),
+          returns: round2(rSum),
         },
       };
+    } else {
+      // 期末与总账完全一致（无排除/补齐/逐项差异）→ 仍生成核对结果供 UI 显示「总账优先核对一致」
+      result.selfCheck = { ending: result.__summaryEnding, computedEnding: Math.round(ending * 100) / 100, diff: 0, suspicious: [], excluded: 0, addedPay: 0, itemDiffs: [], sums: { opening: result.opening != null ? round2(toNum(result.opening)) : null, goods: round2(gSum), payments: round2(pSum), returns: round2(rSum) } };
     }
   }
   return result;
@@ -2352,21 +2393,32 @@ function buildImportSummary(parsed){
   }
   if(parsed.selfCheck){
     const sc = parsed.selfCheck;
-    h += '<div style="color:#c0392b;font-weight:600;margin-top:10px;border:1px solid #e5b8b2;background:#fdf3f1;border-radius:6px;padding:8px;line-height:1.8">';
+    const bad = Math.abs(sc.diff) > 0.01;
+    const tone = bad ? 'color:#c0392b;border:1px solid #e5b8b2;background:#fdf3f1' : 'color:#1e8449;border:1px solid #b8e0c4;background:#f0faf3';
+    h += '<div style="font-weight:600;margin-top:10px;' + tone + ';border-radius:6px;padding:8px;line-height:1.8">';
+    h += '📒 <b>总账优先核对</b>：本文件含总账表，期末以总账为准。';
     if(sc.addedPay > 0){
-      h += '✅ <b>已自动从总账补齐付款 ' + sc.addedPay + ' 笔</b>（明细表漏记，总账为准），期末已核对一致。<br>';
+      h += '<br>✅ <b>已自动从总账补齐付款 ' + sc.addedPay + ' 笔</b>（明细表漏记，总账为准），期末已核对一致。';
     }
     if(sc.excluded){
-      h += '⚠️ <b>以下行标记了「退货」但你的总账没有扣减，已按总账口径不记录：</b>' +
-        sc.suspicious.map(r => '<b>' + esc(r.name || '退货') + '（' + (r.date || '') + '）' + (r.amt || '') + '元</b>').join('、') + '。<br>';
+      h += '<br>⚠️ <b>以下行标记了「退货」但你的总账没有扣减，已按总账口径不记录：</b>' +
+        sc.suspicious.map(r => '<b>' + esc(r.name || '退货') + '（' + (r.date || '') + '）' + (r.amt || '') + '元</b>').join('、') + '。';
     }
-    if(Math.abs(sc.diff) > 0.01){
-      h += '⚠️ <b>期末自检不一致</b>：按本文件数据算出期末 <b>' + sc.computedEnding + '</b>，与总账期末 <b>' + sc.ending + '</b> 相差 <b>' + (sc.diff > 0 ? '+' : '') + sc.diff + '</b> 元。<br>';
-      h += '已自动核对各项：期初 <b>' + (sc.sums.opening ?? '无') + '</b>、货款合计 <b>' + sc.sums.goods + '</b>、付款合计 <b>' + sc.sums.payments + '</b>、退货合计 <b>' + sc.sums.returns + '</b>。<br>请对照检查哪一项与总账对不上，可在对应页面手动调整后再导入。';
+    if(bad){
+      h += '<br>⚠️ <b>期末自检不一致</b>：按本文件数据算出期末 <b>' + sc.computedEnding + '</b>，与总账期末 <b>' + sc.ending + '</b> 相差 <b>' + (sc.diff > 0 ? '+' : '') + sc.diff + '</b> 元。';
+      if(sc.itemDiffs && sc.itemDiffs.length){
+        h += '<br>📌 <b>已自动逐项对比（问题出在哪）：</b>' + sc.itemDiffs.map(d => '<b>' + d.key + '</b>：总账 <b>' + d.book + '</b> vs 逐笔合计 <b>' + d.calc + '</b>').join('；') + '。';
+      } else {
+        h += '<br>已自动核对各项：期初 <b>' + (sc.sums.opening ?? '无') + '</b>、货款合计 <b>' + sc.sums.goods + '</b>、付款合计 <b>' + sc.sums.payments + '</b>、退货合计 <b>' + sc.sums.returns + '</b>。';
+      }
+      h += '<br>请对照检查后，可在对应页面手动调整再导入。';
     } else if(!sc.addedPay && !sc.excluded){
-      h += '✅ 期末已与总账核对一致：<b>' + sc.computedEnding + '</b>。';
+      h += '<br>✅ 期末已与总账核对一致：<b>' + sc.computedEnding + '</b>。';
     }
     h += '</div>';
+  } else {
+    // 无总账表 → 提示按明细逐笔核对（让用户明白为何没走「总账优先」）
+    h += '<div style="color:#7f8c8d;font-weight:600;margin-top:10px;border:1px solid #d5d8dc;background:#f8f9f9;border-radius:6px;padding:8px;line-height:1.8">ℹ️ 本文件<b>没有总账表</b>，已按明细逐笔核对（期初 + 货款 − 付款 − 退货）。<br>若期末数字与期望不符，请发源文件给我，我再排查。</div>';
   }
   return h;
 }
