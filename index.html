@@ -14,6 +14,13 @@
   main { max-width: 1200px; margin: 18px auto 60px; padding: 0 16px; }
   .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 16px 18px; margin-bottom: 16px; }
   .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+  .customer-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: #f6f8fb; border: 1px solid #e3e8f0; border-radius: 8px; }
+  .customer-bar select { padding: 7px 8px; border: 1px solid #d4d9e0; border-radius: 6px; font-size: 14px; min-width: 130px; background: #fff; }
+  .customer-bar button { padding: 7px 12px; border: 1px solid #d4d9e0; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  .customer-bar button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  .customer-bar button.danger { color: #d33; border-color: #ecc; }
+  .customer-label { font-size: 13px; font-weight: 600; color: #445; }
+  .customer-tip { font-size: 11px; color: #889; width: 100%; }
   .field { display: flex; flex-direction: column; gap: 4px; }
   .field label { font-size: 12px; color: #667; }
   .field input { padding: 8px 10px; border: 1px solid #d4d9e0; border-radius: 6px; font-size: 14px; }
@@ -91,12 +98,21 @@
       3. 「金额 = 数量 × 单价」自动计算，按月份自动出小计、按年份出总计；<br>
       4. 付款、退货同样录入；「总账」页自动汇总余额；<br>
       5. 点底部「导出 Excel」生成 .xlsx 文件，可直接发微信；「打印」可打印全部表单。<br>
+      <b>多客户</b>：顶部可「＋新建客户」切换账目（甲方默认「许道丰」，各客户互不影响）；<br>
       <b>数据自动保存在本浏览器中，下次打开还在</b>（清浏览器缓存会丢失，重要数据请导出 Excel 备份）。
     </div>
   </details>
 
   <section class="card settings">
-    <div class="field"><label>甲方（供货方）</label><input id="partyA" placeholder="如：张三"></div>
+    <div class="customer-bar">
+      <span class="customer-label">👥 当前客户（乙方）</span>
+      <select id="customerSelect" title="切换客户"></select>
+      <button id="addCustomerBtn" class="primary">＋ 新建客户</button>
+      <button id="renameCustomerBtn">✏️ 重命名</button>
+      <button id="deleteCustomerBtn" class="danger">🗑 删除</button>
+      <span class="customer-tip">新建客户时甲方默认「许道丰」；各客户账目互相独立，切换互不影响。</span>
+    </div>
+    <div class="field"><label>甲方（供货方）</label><input id="partyA" placeholder="如：许道丰"></div>
     <div class="field"><label>乙方（购货方）</label><input id="partyB" placeholder="如：李四"></div>
     <div class="field"><label>期初余额（如 2022 年底余额）</label><input id="opening" type="number" step="0.01" placeholder="如 333756"></div>
     <div class="field"><label>期初备注</label><input id="openingNote" placeholder="如：2023年初"></div>
@@ -229,12 +245,23 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.11';
+const APP_VERSION = 'v2.12';
 const LS_KEY = 'duizhang-generator-v1';
-let state = {
-  partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
-  goods: [], payments: [], returns: []
-};
+const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
+// 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
+// state 始终 = 当前客户对象（同一引用），既有业务代码全部不变
+let db = { v: 2, current: null, customers: {} };
+let state = { partyA: DEFAULT_PARTY_A, partyB: '', opening: '', openingNote: '', cutoffNote: '', goods: [], payments: [], returns: [] };
+function newCustomerObj(name){
+  return { id: uid(), partyA: DEFAULT_PARTY_A, partyB: name || '', opening: '', openingNote: '', cutoffNote: '', goods: [], payments: [], returns: [] };
+}
+function customerList(){ return Object.keys(db.customers).map(id => db.customers[id]); }
+function currentCustomer(){ return db.customers[db.current] || null; }
+function customerDisplay(c){ return (c && c.partyB) ? c.partyB : '（未命名客户）'; }
+function freshDb(){
+  const c = newCustomerObj('');
+  return { v: 2, current: c.id, customers: { [c.id]: c } };
+}
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
 function focusLastRow(tableEl){
   if(!tableEl) return;
@@ -246,24 +273,102 @@ function focusLastRow(tableEl){
 function updateDataStatus(){
   const el = document.getElementById('dataStatus');
   if(!el) return;
-  el.textContent = '对账单 ' + APP_VERSION + ' ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
+  el.textContent = '对账单 ' + APP_VERSION + ' ｜ 客户：' + customerDisplay(currentCustomer()) + ' ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
   const badge = document.getElementById('appVersionBadge');
   if(badge) badge.textContent = APP_VERSION; // 标题旁常驻版本徽章（每次发新版只需改 APP_VERSION）
 }
 function defaultPayment(){ return { id: uid(), date:'', amount:'', note:'' }; }
 function defaultReturn(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', note:'' }; }
 function save(){
-  try { localStorage.setItem(LS_KEY, JSON.stringify(state)); window.__lsFail = false; }
+  try {
+    if(db.current && db.customers[db.current]) db.customers[db.current] = state; // 引用同步兜底
+    localStorage.setItem(LS_KEY, JSON.stringify(db)); window.__lsFail = false;
+  }
   catch(e){
     if(!window.__lsFail){ window.__lsFail = true; try{ alert('警告：数据无法保存到本机（浏览器存储不可用），新录入的数据在关闭页面后会丢失！\n请尽快点「导出 Excel」保存留底。'); }catch(_){} }
   }
   updateDataStatus && updateDataStatus();
 }
 function load(){
-  try {
-    const raw = localStorage.getItem(LS_KEY);
-    if(raw){ const d = JSON.parse(raw); if(d && typeof d === 'object'){ state = Object.assign(state, d); if(!Array.isArray(state.goods)) state.goods = []; if(!Array.isArray(state.payments)) state.payments = []; if(!Array.isArray(state.returns)) state.returns = []; } }
-  } catch(e){}
+  let d = null;
+  try { const raw = localStorage.getItem(LS_KEY); if(raw) d = JSON.parse(raw); } catch(e){ d = null; }
+  if(d && d.v === 2 && d.customers && typeof d.customers === 'object'){
+    db = d;
+    const ids = Object.keys(db.customers);
+    if(!ids.length){ db = freshDb(); }
+    else {
+      if(!db.customers[db.current]) db.current = ids[0];
+      for(const id of ids){
+        const c = db.customers[id];
+        if(!Array.isArray(c.goods)) c.goods = [];
+        if(!Array.isArray(c.payments)) c.payments = [];
+        if(!Array.isArray(c.returns)) c.returns = [];
+      }
+    }
+  }
+  else if(d && typeof d === 'object' && Array.isArray(d.goods)){
+    // 旧格式（v1 单客户直存 state）自动迁移 → 包成第一个客户，数据不丢
+    const c = newCustomerObj(String(d.partyB || '').trim() || '客户1');
+    c.partyA = String(d.partyA || '').trim() || DEFAULT_PARTY_A;
+    c.partyB = String(d.partyB || '').trim() || c.partyB;
+    c.opening = d.opening || ''; c.openingNote = d.openingNote || ''; c.cutoffNote = d.cutoffNote || '';
+    c.goods = d.goods.slice(); c.payments = Array.isArray(d.payments) ? d.payments.slice() : [];
+    c.returns = Array.isArray(d.returns) ? d.returns.slice() : [];
+    db = { v: 2, current: c.id, customers: { [c.id]: c } };
+  }
+  else { db = freshDb(); }
+  state = db.customers[db.current];
+}
+/* —— 客户切换 —— */
+function renderCustomerSelector(){
+  const sel = document.getElementById('customerSelect');
+  if(!sel) return;
+  sel.innerHTML = '';
+  for(const c of customerList()){
+    const opt = document.createElement('option');
+    opt.value = c.id; opt.textContent = customerDisplay(c);
+    sel.appendChild(opt);
+  }
+  sel.value = db.current;
+}
+function syncSettingsInputs(){
+  ['partyA','partyB','opening','openingNote','cutoffNote'].forEach(id => {
+    const el = document.getElementById(id); if(el) el.value = state[id] != null ? state[id] : '';
+  });
+}
+function selectCustomer(id){
+  if(!db.customers[id] || id === db.current) return;
+  save();
+  db.current = id; state = db.customers[id];
+  syncSettingsInputs(); renderCustomerSelector(); renderAllPreviews(); save();
+}
+function addCustomerFlow(){
+  const name = (prompt('请输入新客户名称（即乙方/购货方）：') || '').trim();
+  if(!name) return;
+  if(customerList().some(c => c.partyB === name) && !confirm('已存在同名客户「' + name + '」，仍然新建？')) return;
+  const c = newCustomerObj(name);
+  db.customers[c.id] = c; db.current = c.id; state = c;
+  save(); renderCustomerSelector(); syncSettingsInputs(); renderAllPreviews();
+  document.getElementById('partyA').value = DEFAULT_PARTY_A; // 甲方默认许道丰
+  const pb = document.getElementById('partyB'); if(pb) pb.focus();
+}
+function renameCustomerFlow(){
+  const c = currentCustomer(); if(!c) return;
+  const name = (prompt('新客户名称（乙方）：', c.partyB || '') || '').trim();
+  if(!name || name === c.partyB) return;
+  if(customerList().some(x => x.id !== c.id && x.partyB === name) && !confirm('已存在同名客户「' + name + '」，仍然改名？')) return;
+  c.partyB = name;
+  save(); renderCustomerSelector(); syncSettingsInputs();
+}
+function deleteCustomerFlow(){
+  const c = currentCustomer(); if(!c) return;
+  if(!confirm('确定删除客户「' + customerDisplay(c) + '」的全部账目？\n（货款/付款/退货/期初将一并删除，无法恢复！）')) return;
+  delete db.customers[c.id];
+  const ids = Object.keys(db.customers);
+  if(!ids.length){ db = freshDb(); }
+  db.current = ids.length ? ids[0] : db.current;
+  state = db.customers[db.current];
+  save(); renderCustomerSelector(); syncSettingsInputs(); renderAllPreviews();
 }
 
 /* ================= 分组与汇总 ================= */
@@ -546,11 +651,14 @@ function bindSettings(){
 /* ================= 工具栏绑定 ================= */
 function setup(){
   load();
-  document.getElementById('partyA').value = state.partyA;
-  document.getElementById('partyB').value = state.partyB;
-  document.getElementById('opening').value = state.opening;
-  document.getElementById('openingNote').value = state.openingNote;
-  document.getElementById('cutoffNote').value = state.cutoffNote;
+  // 客户切换
+  renderCustomerSelector();
+  const selC = document.getElementById('customerSelect');
+  if(selC) selC.addEventListener('change', e => selectCustomer(e.target.value));
+  const addC = document.getElementById('addCustomerBtn'); if(addC) addC.addEventListener('click', addCustomerFlow);
+  const renC = document.getElementById('renameCustomerBtn'); if(renC) renC.addEventListener('click', renameCustomerFlow);
+  const delC = document.getElementById('deleteCustomerBtn'); if(delC) delC.addEventListener('click', deleteCustomerFlow);
+  syncSettingsInputs();
 
   // tabs
   document.querySelectorAll('.tabs button').forEach(btn => {
@@ -697,14 +805,11 @@ function setup(){
     }
   });
   document.getElementById('resetAll').addEventListener('click', () => {
-    if(confirm('确定清空全部数据？甲方乙方名称也会一并清除，此操作不可恢复（导出 Excel 可备份）。')){
-      state = { partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '', goods: [], payments: [], returns: [] };
+    if(confirm('确定清空当前客户（' + customerDisplay(currentCustomer()) + '）的全部数据？甲方乙方名称也会一并清除，此操作不可恢复（导出 Excel 可备份）。')){
+      state.partyA = ''; state.partyB = ''; state.opening = ''; state.openingNote = ''; state.cutoffNote = '';
+      state.goods = []; state.payments = []; state.returns = [];
       save();
-      document.getElementById('partyA').value = '';
-      document.getElementById('partyB').value = '';
-      document.getElementById('opening').value = '';
-      document.getElementById('openingNote').value = '';
-      document.getElementById('cutoffNote').value = '';
+      syncSettingsInputs();
       renderGoodsEditor(); renderPaymentsEditor(); renderReturnsEditor(); renderAllPreviews();
     }
   });
