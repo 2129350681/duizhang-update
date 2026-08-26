@@ -41,6 +41,31 @@
   .table-wrap { overflow-x: auto; border: 1px solid #e2e6ec; border-radius: 8px; }
   .add-row-bottom { margin-top: 10px; width: 100%; padding: 10px; background: #f7f9fc; border: 1px dashed #b8c2cf; color: #1f6feb; font-size: 14px; border-radius: 8px; }
   .add-row-bottom:hover { background: #eef2f7; border-color: #1f6feb; }
+  .pick-name { background: #fff7e8; border-color: #e8c98a; color: #9a6b00; }
+  .pick-name:hover { background: #fff0d4; }
+  /* 大字模式（老年友好）：放大全局字体与按钮 */
+  body.large-mode table.editor { font-size: 16px; }
+  body.large-mode table.editor th { font-size: 15px; padding: 10px 8px; }
+  body.large-mode table.editor input { font-size: 17px; padding: 11px 8px; min-width: 92px; }
+  body.large-mode button { font-size: 16px; padding: 12px 18px; }
+  body.large-mode .tabs button { font-size: 16px; padding: 13px 20px; }
+  body.large-mode .customer-bar button { font-size: 15px; padding: 11px 14px; }
+  body.large-mode .add-row-bottom { font-size: 18px; padding: 15px; }
+  body.large-mode .toolbar .hint, body.large-mode #dataStatus { font-size: 14px; }
+  body.large-mode .sheet-title { font-size: 19px; }
+  body.large-mode table.pv { font-size: 15px; }
+  body.large-mode table.pv th, body.large-mode table.pv td { padding: 8px 6px; }
+  body.large-mode .field input, body.large-mode .field select { font-size: 16px; padding: 10px 8px; }
+  body.large-mode .field label { font-size: 15px; }
+  body.large-mode .empty-tip { font-size: 15px; }
+  .lg-toggle { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 8px 10px; background: #f7f9fc; border: 1px solid #e2e6ec; border-radius: 8px; font-size: 14px; cursor: pointer; }
+  .lg-toggle input { width: 18px; height: 18px; }
+  /* 选名称面板 */
+  .name-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-height: 55vh; overflow-y: auto; margin: 10px 0; }
+  .name-picker-grid button { padding: 14px 10px; font-size: 15px; text-align: center; background: #fff; border: 1px solid #d4d9e0; border-radius: 10px; cursor: pointer; line-height: 1.5; }
+  .name-picker-grid button:hover { border-color: #1f6feb; background: #f2f7ff; }
+  .name-picker-grid .np-price { display: block; font-size: 12px; color: #889; margin-top: 2px; }
+  .name-picker-empty { text-align: center; color: #889; padding: 20px 0; font-size: 14px; }
   table.editor { width: 100%; border-collapse: collapse; font-size: 13px; }
   table.editor th { background: #f2f5f9; padding: 8px 6px; text-align: left; border-bottom: 1px solid #d4d9e0; white-space: nowrap; font-weight: 600; }
   table.editor td { border-bottom: 1px solid #eef1f5; padding: 3px 4px; }
@@ -119,6 +144,7 @@
     <div class="field"><label>期初余额（如 2022 年底余额）</label><input id="opening" type="number" step="0.01" placeholder="如 333756"></div>
     <div class="field"><label>期初备注</label><input id="openingNote" placeholder="如：2023年初"></div>
     <div class="field"><label>对账截止说明（选填）</label><input id="cutoffNote" placeholder="如：2025年10月15日止"></div>
+    <label class="lg-toggle"><input type="checkbox" id="largeMode"> 🔍 大字模式（字更大、按钮更好点，适合老花眼）</label>
   </section>
 
   <nav class="tabs">
@@ -132,6 +158,7 @@
   <section id="tab-goods" class="tab active">
     <div class="card">
       <div class="toolbar">
+        <button id="pickNameGoods" class="pick-name">📇 选名称</button>
         <button id="pasteGoods">📋 批量粘贴</button>
         <button id="clearGoods" class="danger">清空货款</button>
         <span class="hint">数量/单价任意一项留空则该行不计入小计；备注可写「余量16付」「要配脚」等说明。</span>
@@ -160,6 +187,7 @@
   <section id="tab-returns" class="tab">
     <div class="card">
       <div class="toolbar">
+        <button id="pickNameReturns" class="pick-name">📇 选名称</button>
         <button id="pasteReturns">📋 批量粘贴</button>
         <button id="clearReturns" class="danger">清空退货</button>
         <span class="hint">退货记录：日期 + 名称 + 数量 + 单价，金额自动计算，底部自动出「退货共计」。</span>
@@ -222,6 +250,18 @@
 </div>
 
 
+<!-- 选名称弹窗（常用名称大按钮，老年友好免打字） -->
+<div class="modal-mask" id="namePickerModal">
+  <div class="modal">
+    <h3>📇 选常用名称</h3>
+    <p style="font-size:13px;color:#667;margin-bottom:4px">点一个名称就填到最新一行，不用打字（带出的单价可改）。</p>
+    <div id="namePickerGrid" class="name-picker-grid"></div>
+    <div class="modal-actions">
+      <button id="namePickerCancel">取消</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 /* ================= 工具函数 ================= */
@@ -247,7 +287,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.19';
+const APP_VERSION = 'v2.20';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -265,6 +305,42 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
+/* 老年友好：常用名称库（从货款历史统计：{名称:{price:最近单价, count:次数}}），供选名称弹窗与单价自动记忆使用 */
+function nameLib(){
+  const lib = {};
+  for(const r of state.goods){
+    const n = String(r.name || '').trim();
+    if(!n) continue;
+    if(!lib[n]) lib[n] = { price:'', count:0 };
+    lib[n].count++;
+    if(r.price && toNum(r.price) != null) lib[n].price = String(r.price);
+  }
+  return lib;
+}
+/* 打开「选常用名称」弹窗：按使用次数从多到少排大按钮，点选后回调 (name, price) */
+function openNamePicker(onPick){
+  const modal = document.getElementById('namePickerModal');
+  const grid = document.getElementById('namePickerGrid');
+  if(!modal || !grid) return;
+  const lib = nameLib();
+  const names = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh'));
+  if(names.length){
+    grid.innerHTML = names.map(n =>
+      '<button data-name="' + esc(n) + '">' + esc(n) +
+      (lib[n].price ? '<span class="np-price">单价 ' + esc(lib[n].price) + '</span>' : '') +
+      '</button>'
+    ).join('');
+  } else {
+    grid.innerHTML = '<div class="name-picker-empty">还没有记住任何名称。先在「货款」里录一两笔（输入名称和单价），下次就能直接点选。</div>';
+  }
+  grid.onclick = (e) => {
+    const btn = e.target.closest('[data-name]');
+    if(!btn) return;
+    modal.classList.remove('show');
+    onPick && onPick(btn.dataset.name, lib[btn.dataset.name] ? lib[btn.dataset.name].price : '');
+  };
+  modal.classList.add('show');
+}
 function focusLastRow(tableEl){
   if(!tableEl) return;
   const inputs = tableEl.querySelectorAll('tbody tr:last-child input');
@@ -515,6 +591,15 @@ function bindEditor(tableEl, rows, amountKey, onChange){
     if(!r) return;
     r[t.dataset.field] = t.value;
     if((t.dataset.field === 'qty' || t.dataset.field === 'price') && toNum(r.amt) != null){ r.amt = ''; } // 手动改数量/单价即解锁导入锁定的金额
+    // 单价自动记忆：输入名称时若历史里有该名称的单价且本行未填 → 自动带出（老年友好免重复打字）
+    if(t.dataset.field === 'name' && r.name && !r.price){
+      const hit = nameLib()[String(r.name).trim()];
+      if(hit && hit.price){
+        r.price = hit.price;
+        const pc = tableEl.querySelector('input[data-field="price"][data-id="' + r.id + '"]');
+        if(pc) pc.value = hit.price;
+      }
+    }
     save();
     if(amountKey === 'amount'){
       const a = rowAmount(r);
@@ -849,6 +934,39 @@ function setup(){
       location.reload();
     }
   });
+
+  // 老年友好：选常用名称（填到当前表格最后一行，点选免打字）
+  const namePickerModal = document.getElementById('namePickerModal');
+  function pickNameToGoods(){
+    openNamePicker((name, price) => {
+      if(!state.goods.length || state.goods[state.goods.length-1].name) state.goods.push(defaultRow());
+      const r = state.goods[state.goods.length-1];
+      r.name = name; if(price) r.price = price;
+      save(); renderGoodsEditor(); renderAllPreviews(); focusLastRow(goodsEditor);
+    });
+  }
+  function pickNameToReturns(){
+    openNamePicker((name, price) => {
+      if(!state.returns.length || state.returns[state.returns.length-1].name) state.returns.push(defaultReturn());
+      const r = state.returns[state.returns.length-1];
+      r.name = name; if(price) r.price = price;
+      save(); renderReturnsEditor(); renderAllPreviews(); focusLastRow(returnsEditor);
+    });
+  }
+  document.getElementById('pickNameGoods').addEventListener('click', pickNameToGoods);
+  document.getElementById('pickNameReturns').addEventListener('click', pickNameToReturns);
+  document.getElementById('namePickerCancel').addEventListener('click', () => namePickerModal.classList.remove('show'));
+  namePickerModal.addEventListener('click', e => { if(e.target === namePickerModal) namePickerModal.classList.remove('show'); });
+
+  // 大字模式（localStorage 持久化，刷新/重开保持）
+  const largeModeEl = document.getElementById('largeMode');
+  if(largeModeEl){
+    if(localStorage.getItem('duizhang-large-mode') === '1'){ document.body.classList.add('large-mode'); largeModeEl.checked = true; }
+    largeModeEl.addEventListener('change', () => {
+      document.body.classList.toggle('large-mode', largeModeEl.checked);
+      try{ localStorage.setItem('duizhang-large-mode', largeModeEl.checked ? '1' : '0'); }catch(_){}
+    });
+  }
 
   // 初始渲染
   renderGoodsEditor(); renderPaymentsEditor(); renderReturnsEditor(); renderAllPreviews();
