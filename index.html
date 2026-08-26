@@ -287,7 +287,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.20';
+const APP_VERSION = 'v2.21';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -305,6 +305,14 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
+/* 日期继承：取 rows 中最后一个非空日期（新增行默认同一天，老年友好免重复写日期） */
+function lastDate(rows){
+  for(let i = rows.length - 1; i >= 0; i--){
+    const d = String(rows[i].date || '').trim();
+    if(d) return d;
+  }
+  return '';
+}
 /* 老年友好：常用名称库（从货款历史统计：{名称:{price:最近单价, count:次数}}），供选名称弹窗与单价自动记忆使用 */
 function nameLib(){
   const lib = {};
@@ -474,7 +482,14 @@ function labelOf(key){
 function yearOf(key){ return key == null ? null : Math.floor(key / 100); }
 function buildGoodsGroups(rows){
   const groups = new Map();
-  for(const r of rows){ const k = keyOf(r); if(!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  let last = '';
+  for(const r of rows){
+    const d = String(r.date || '').trim();
+    if(d) last = d; // 记住最近一个已填日期
+    const k = keyOf({ date: d || last }); // 空日期默认继承上一非空日期（同一天），避免归到「未标注日期」组
+    if(!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
   const keys = [...groups.keys()].sort((a,b)=>(a==null?1e9:a)-(b==null?1e9:b));
   return keys.map(k => ({ key: k, label: labelOf(k), rows: groups.get(k), subtotal: sumAmount(groups.get(k)) }));
 }
@@ -784,7 +799,7 @@ function setup(){
   goodsEditor.__fields = G_FIELDS; goodsEditor.__amountKey = 'amount';
   const renderGoodsEditor = () => renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor, balanceByIdMap());
   bindEditor(goodsEditor, state.goods, 'amount', renderGoodsPreview);
-  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); save(); renderGoodsEditor(); renderGoodsPreview(); focusLastRow(document.getElementById('goodsEditor')); });
+  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(Object.assign(defaultRow(), { date: lastDate(state.goods) })); save(); renderGoodsEditor(); renderGoodsPreview(); focusLastRow(document.getElementById('goodsEditor')); });
   document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); renderGoodsPreview(); } });
 
   // 付款
@@ -797,7 +812,7 @@ function setup(){
   paymentsEditor.__fields = P_FIELDS; paymentsEditor.__amountKey = 'amount';
   const renderPaymentsEditor = () => renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
   bindEditor(paymentsEditor, state.payments, 'amount', renderPaymentsPreview);
-  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); save(); renderPaymentsEditor(); renderPaymentsPreview(); focusLastRow(document.getElementById('paymentsEditor')); });
+  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(Object.assign(defaultPayment(), { date: lastDate(state.payments) })); save(); renderPaymentsEditor(); renderPaymentsPreview(); focusLastRow(document.getElementById('paymentsEditor')); });
   document.getElementById('clearPayments').addEventListener('click', () => { if(confirm('确定清空所有付款记录？')){ state.payments = []; save(); renderPaymentsEditor(); renderPaymentsPreview(); } });
 
   // 退货
@@ -813,7 +828,7 @@ function setup(){
   returnsEditor.__fields = R_FIELDS; returnsEditor.__amountKey = 'amount';
   const renderReturnsEditor = () => renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
   bindEditor(returnsEditor, state.returns, 'amount', renderReturnsPreview);
-  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); save(); renderReturnsEditor(); renderReturnsPreview(); focusLastRow(document.getElementById('returnsEditor')); });
+  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(Object.assign(defaultReturn(), { date: lastDate(state.returns) })); save(); renderReturnsEditor(); renderReturnsPreview(); focusLastRow(document.getElementById('returnsEditor')); });
   document.getElementById('clearReturns').addEventListener('click', () => { if(confirm('确定清空所有退货记录？')){ state.returns = []; save(); renderReturnsEditor(); renderReturnsPreview(); } });
 
   // 批量粘贴
@@ -939,7 +954,7 @@ function setup(){
   const namePickerModal = document.getElementById('namePickerModal');
   function pickNameToGoods(){
     openNamePicker((name, price) => {
-      if(!state.goods.length || state.goods[state.goods.length-1].name) state.goods.push(defaultRow());
+      if(!state.goods.length || state.goods[state.goods.length-1].name) state.goods.push(Object.assign(defaultRow(), { date: lastDate(state.goods) }));
       const r = state.goods[state.goods.length-1];
       r.name = name; if(price) r.price = price;
       save(); renderGoodsEditor(); renderAllPreviews(); focusLastRow(goodsEditor);
@@ -947,7 +962,7 @@ function setup(){
   }
   function pickNameToReturns(){
     openNamePicker((name, price) => {
-      if(!state.returns.length || state.returns[state.returns.length-1].name) state.returns.push(defaultReturn());
+      if(!state.returns.length || state.returns[state.returns.length-1].name) state.returns.push(Object.assign(defaultReturn(), { date: lastDate(state.returns) }));
       const r = state.returns[state.returns.length-1];
       r.name = name; if(price) r.price = price;
       save(); renderReturnsEditor(); renderAllPreviews(); focusLastRow(returnsEditor);
@@ -1699,10 +1714,13 @@ function buildXlsxFiles(){
     const rows = [];
     for(const g of gg){
       let ms = 0;
+      let last = ''; // 组内日期继承：空日期默认同前一天
       for(const r of g.rows){
         const a = rowAmount(r);
         if(a != null) ms += a;
-        const d = parseDateParts(r.date);
+        const dd = String(r.date || '').trim();
+        if(dd) last = dd;
+        const d = parseDateParts(last);
         const dateTxt = d ? d.y + '.' + (d.mo || '') + (d.d ? '.' + d.d : '') : r.date;
         const bal = balSer.map.get(gIdx.get(r.id));
         rows.push([dateTxt, r.name, r.unit || '', n(toNum(r.qty)), n(toNum(r.price)), n(a), bal == null ? null : n(bal), '', r.waybill || '', r.note || '']);
