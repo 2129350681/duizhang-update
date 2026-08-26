@@ -303,7 +303,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.28';
+const APP_VERSION = 'v2.29';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -321,14 +321,204 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
-/* 自定义产品库（localStorage 独立键，所有客户通用）：人为预录常用产品，方便后续搜索点选 */
+// ===== 历史账单预置产品库（从用户提供的账单 xlsx 自动提取，单价取历史最高；所有客户通用，选名称弹窗里可继续新增）=====
+const DEFAULT_PRODUCTS = [
+  { name: '1185庄头', price: '0.5' },
+  { name: '150024头子', price: '2.2' },
+  { name: '205-1', price: '3.1' },
+  { name: '23-8-831脚套黑色', price: '0.35' },
+  { name: '23-8脚套黑', price: '0.35' },
+  { name: '23-9-831脚套黑色', price: '0.35' },
+  { name: '23-9-831脚套灰银', price: '0.4' },
+  { name: '3072黑脚套', price: '1.2' },
+  { name: '3072脚套黑绿', price: '1.2' },
+  { name: '3072铝镁', price: '4.5' },
+  { name: '3072铝镁黑', price: '4.5' },
+  { name: '3号脚', price: '3.5' },
+  { name: '4号脚', price: '3.5' },
+  { name: '6.0宽TR脚', price: '7' },
+  { name: '8084亮黑', price: '1.7' },
+  { name: '831黑脚套', price: '0.35' },
+  { name: '831灰脚套', price: '0.4' },
+  { name: '831脚套黑色', price: '0.35' },
+  { name: '831脚套灰', price: '0.4' },
+  { name: '831脚套灰色', price: '0.4' },
+  { name: '831脚套透明', price: '0.4' },
+  { name: '白铜单节+中梁', price: '3.6' },
+  { name: '不锈钢头脚套', price: '1.7' },
+  { name: '车件', price: '3' },
+  { name: '单节中梁', price: '3.7' },
+  { name: '光板脚丝', price: '0.4' },
+  { name: '光板尾脚', price: '0.4' },
+  { name: '黑', price: '0.35' },
+  { name: '黑灰', price: '1.2' },
+  { name: '黑蓝', price: '1.2' },
+  { name: '黑色脚套', price: '0.35' },
+  { name: '灰', price: '1.2' },
+  { name: '灰色', price: '0.4' },
+  { name: '灰色脚套', price: '0.4' },
+  { name: '脚板', price: '0.4' },
+  { name: '脚丝', price: '0.5' },
+  { name: '脚套', price: '0.35' },
+  { name: '铰链', price: '0.7' },
+  { name: '金属脚', price: '3.1' },
+  { name: '金属头脚套', price: '1.7' },
+  { name: '咖啡', price: '4.5' },
+  { name: '开模费', price: '1000' },
+  { name: '开模庄头', price: '0.65' },
+  { name: '兰', price: '4.5' },
+  { name: '老花+中梁', price: '3.7' },
+  { name: '老花脚+中梁', price: '3.9' },
+  { name: '老花脚丝+中梁', price: '3.6' },
+  { name: '亮黑塑钢脚', price: '3.3' },
+  { name: '亮透灰', price: '3.3' },
+  { name: '铝镁SM3072黑', price: '4.5' },
+  { name: '模具费', price: '2300' },
+  { name: '奶茶色长脚套', price: '1' },
+  { name: '配501脚81081', price: '3' },
+  { name: '配501脚81082#', price: '3' },
+  { name: '平的tR', price: '7' },
+  { name: '枪', price: '4.5' },
+  { name: '枪色', price: '0.4' },
+  { name: '三件套', price: '1.9' },
+  { name: '三角背TR', price: '7' },
+  { name: '三角TR', price: '7' },
+  { name: '十字架TR', price: '7' },
+  { name: '塑钢脚', price: '4.3' },
+  { name: '铁头子脚套', price: '' },
+  { name: '透明', price: '0.4' },
+  { name: '型材头脚丝8809', price: '2' },
+  { name: '压机头脚丝', price: '3.1' },
+  { name: '银', price: '4.5' },
+  { name: '印花亮黑', price: '4.3' },
+  { name: '长脚套白', price: '1.2' },
+  { name: '长脚套粉', price: '1.2' },
+  { name: '长脚套黑', price: '1.2' },
+  { name: '长脚套兰', price: '1.2' },
+  { name: '中梁', price: '1' },
+  { name: '中梁压机', price: '1.8' },
+  { name: '庄头', price: '0.55' },
+  { name: '左348支右226支', price: '3.1' },
+  { name: 'A001一牙组合件', price: '0.7' },
+  { name: 'A085*5.0*0.7组合（何）', price: '1.5' },
+  { name: 'B1500', price: '3.8' },
+  { name: 'B972', price: '2.4' },
+  { name: 'DB2117', price: '3.5' },
+  { name: 'DH81032', price: '3.1' },
+  { name: 'DH81059', price: '3.1' },
+  { name: 'DH81081', price: '3' },
+  { name: 'DH81081后面', price: '3' },
+  { name: 'DH81082', price: '3' },
+  { name: 'DH81082后面', price: '3' },
+  { name: 'DH81082前面', price: '3' },
+  { name: 'DH81085', price: '3' },
+  { name: 'DH无框脚', price: '3' },
+  { name: 'FTA273', price: '9' },
+  { name: 'FTA273中梁', price: '2.5' },
+  { name: 'FY170-1', price: '2.6' },
+  { name: 'FY170-1（玉）', price: '3.1' },
+  { name: 'FY170-1（玉）直角', price: '2.6' },
+  { name: 'FY170-10', price: '2.6' },
+  { name: 'FY170-16', price: '3.1' },
+  { name: 'FY170-16直头', price: '2.6' },
+  { name: 'FY170-2', price: '2.6' },
+  { name: 'FY170-2（玉）', price: '3.1' },
+  { name: 'FY170-2型材头', price: '2.6' },
+  { name: 'FY170-2直头', price: '2.6' },
+  { name: 'FY170-4', price: '3.1' },
+  { name: 'FY170-5', price: '2.6' },
+  { name: 'FY170-5弯头', price: '2.6' },
+  { name: 'FY170-9', price: '2.6' },
+  { name: 'FY170-9弯头', price: '2.6' },
+  { name: 'FY170-9直头', price: '2.6' },
+  { name: 'FY188', price: '3.1' },
+  { name: 'FY202', price: '3.1' },
+  { name: 'FY202（玉）', price: '3.1' },
+  { name: 'FY205', price: '3.1' },
+  { name: 'FY205-1', price: '3.1' },
+  { name: 'FY205-1（中）', price: '3.1' },
+  { name: 'FY206', price: '3.1' },
+  { name: 'FY208', price: '3.1' },
+  { name: 'FY227', price: '3.2' },
+  { name: 'FY228', price: '3.1' },
+  { name: 'FY70268', price: '3.1' },
+  { name: 'FYS170-1', price: '3.1' },
+  { name: 'FYS170-1（FY252）', price: '3.1' },
+  { name: 'FYS170-4', price: '3.1' },
+  { name: 'KT448', price: '3.1' },
+  { name: 'KT449', price: '2.6' },
+  { name: 'KT457', price: '3.1' },
+  { name: 'KT460', price: '3.1' },
+  { name: 'KT462', price: '3.1' },
+  { name: 'KT474', price: '3' },
+  { name: 'KT474配Y501', price: '3' },
+  { name: 'KT481', price: '3.1' },
+  { name: 'kT699', price: '2.5' },
+  { name: 'TR脚', price: '7' },
+  { name: 'TR脚2款各1千', price: '7' },
+  { name: 'Y501', price: '' },
+  { name: 'Y501庄头', price: '' },
+  { name: 'Y510庄头', price: '' },
+  { name: 'Y511庄头', price: '' },
+  { name: 'Y525', price: '0.55' },
+  { name: 'Y525（4.6*1.3）', price: '0.7' },
+  { name: 'YT170-1（型）', price: '2.6' },
+  { name: 'YX222', price: '3.1' },
+  { name: 'YX255', price: '3.1' },
+  { name: 'YX256', price: '3.1' },
+  { name: 'YX256-1', price: '2.6' },
+  { name: 'YX256金属脚', price: '2.6' },
+  { name: 'YX257', price: '3.1' },
+  { name: 'YX260', price: '3.1' },
+  { name: 'YX261', price: '3.1' },
+  { name: 'YX262', price: '3.1' },
+  { name: 'YX266', price: '3.1' },
+  { name: 'YX273', price: '3.1' },
+  { name: 'YX2732', price: '3.1' },
+  { name: 'YX275', price: '3.1' },
+  { name: 'YX280', price: '3' },
+  { name: 'YX280配Y501', price: '3' },
+  { name: 'YX292', price: '3.1' },
+  { name: 'YX416', price: '2.6' },
+  { name: 'YX510', price: '' },
+  { name: 'YX511', price: '' },
+  { name: 'ZL 069中梁', price: '1.1' },
+];
+
+/* 自定义产品库：内置历史账单预置产品（DEFAULT_PRODUCTS，所有客户通用）+ 用户在弹窗里人为新增的（localStorage），同名合并单价取最高 */
 function getCustomProducts(){
+  const list = [];
+  const seen = new Set();
+  for(const p of DEFAULT_PRODUCTS || []){
+    const n = String(p.name || '').trim();
+    const k = n.toLowerCase();
+    if(!k || seen.has(k)) continue;
+    seen.add(k);
+    list.push({ name: n, price: p.price != null ? String(p.price) : '' });
+  }
   try{
     const raw = localStorage.getItem('duizhang-custom-products');
-    if(!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter(x => x && String(x.name || '').trim()) : [];
-  }catch(_){ return []; }
+    if(raw){
+      const arr = JSON.parse(raw);
+      if(Array.isArray(arr)){
+        for(const x of arr){
+          const n = String(x.name || '').trim();
+          const k = n.toLowerCase();
+          if(!k) continue;
+          const px = x.price != null ? toNum(x.price) : null;
+          if(seen.has(k)){
+            const ex = list.find(p => String(p.name).toLowerCase() === k);
+            const exx = ex && ex.price ? toNum(ex.price) : null;
+            if(ex && px != null && (exx == null || px > exx)) ex.price = String(x.price); // 同名取最高单价
+          } else {
+            seen.add(k);
+            list.push({ name: n, price: x.price != null ? String(x.price) : '' });
+          }
+        }
+      }
+    }
+  }catch(_){}
+  return list;
 }
 function saveCustomProducts(list){
   try{ localStorage.setItem('duizhang-custom-products', JSON.stringify(list)); }catch(_){}
