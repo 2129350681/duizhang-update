@@ -228,7 +228,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.5';
+const APP_VERSION = 'v2.6';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -805,9 +805,13 @@ function classifySheet(sheetName, headerRow){
   const name = String(sheetName || '');
   if(name.includes('总账')) return 'summary';
   const joined = (headerRow || []).join('|');
-  if(joined.includes('名称及规格') && joined.includes('小计')) return 'goods';
-  if(joined.includes('名称及规格')) return 'returns';
-  if(joined.includes('付款') && joined.includes('余额')) return 'payments';
+  // 退货：sheet 名或表头明确含「退货」字样才判退货
+  if(/退货/.test(name) || joined.includes('退货')) return 'returns';
+  // 货款明细：表头含「名称及规格」即货款（外部手账表头为 日期|名称及规格|单位|数量|单价|金额|付款|余额，
+  // 无「小计」字样，此前被误判为退货；自家导出表头同样命中此条）
+  if(joined.includes('名称及规格')) return 'goods';
+  // 付款流水：含「付款」列（可能带「余额」列；自家付款表头为 日期|付款|备注|累计付款 无「余额」）
+  if(joined.includes('付款')) return 'payments';
   if(/货款/.test(name)) return 'goods';
   return null;
 }
