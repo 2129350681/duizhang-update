@@ -340,7 +340,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.37';
+const APP_VERSION = 'v2.38';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -401,6 +401,8 @@ function mergeSeedCustomers(){
 
 // ===== 历史账单预置产品库（从用户提供的账单 xlsx 自动提取，单价取历史最高；所有客户通用，选名称弹窗里可继续新增）=====
 const DEFAULT_PRODUCTS = [
+{ name: '003FTA307', price: '7.2' },
+  { name: '004钛脚丝', price: '4.5' },
   { name: '006亮黑', price: '2.8' },
   { name: '084庄头', price: '0.45' },
   { name: '090+单3.1+B108', price: '1.1' },
@@ -427,6 +429,7 @@ const DEFAULT_PRODUCTS = [
   { name: '23-8脚套黑', price: '0.35' },
   { name: '23-9-831脚套黑色', price: '0.35' },
   { name: '23-9-831脚套灰银', price: '0.4' },
+  { name: '26-9FTA308', price: '4.7' },
   { name: '2号', price: '3.5' },
   { name: '2号（2020支）', price: '3.5' },
   { name: '2号脚', price: '3.5' },
