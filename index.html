@@ -9,6 +9,7 @@
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #eef1f5; color: #2b2f36; font-size: 14px; }
   header { background: linear-gradient(135deg, #1f6feb, #2ea0ff); color: #fff; padding: 22px 28px; }
   header h1 { font-size: 22px; margin-bottom: 6px; }
+  .version-badge { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 9px; border-radius: 11px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.55); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .5px; line-height: 1.5; }
   header p { font-size: 13px; opacity: .92; }
   main { max-width: 1200px; margin: 18px auto 60px; padding: 0 16px; }
   .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 16px 18px; margin-bottom: 16px; }
@@ -77,7 +78,7 @@
 </head>
 <body>
 <header>
-  <h1>📒 对账单生成器</h1>
+  <h1>📒 对账单生成器 <span id="appVersionBadge" class="version-badge"></span></h1>
   <p>只需填好 日期、名称、数量、单价，自动生成对账单：货款明细（按月小计/年度总计）+ 付款流水 + 退货记录 + 总账，一键导出 Excel。</p>
 </header>
 
@@ -228,7 +229,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.6';
+const APP_VERSION = 'v2.7';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -246,6 +247,8 @@ function updateDataStatus(){
   const el = document.getElementById('dataStatus');
   if(!el) return;
   el.textContent = '对账单 ' + APP_VERSION + ' ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
+  const badge = document.getElementById('appVersionBadge');
+  if(badge) badge.textContent = APP_VERSION; // 标题旁常驻版本徽章（每次发新版只需改 APP_VERSION）
 }
 function defaultPayment(){ return { id: uid(), date:'', amount:'', note:'' }; }
 function defaultReturn(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', note:'' }; }

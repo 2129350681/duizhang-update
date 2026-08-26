@@ -1,6 +1,6 @@
 {
-  "version": "2.6",
-  "versionCode": 9,
-  "notes": "修复 Excel 导入识别：表头含「名称及规格」的货款明细不再被误判为退款/退货（含付款、余额列的手账格式也能正确导入货款）",
-  "apk": "duizhang-2.6.apk"
+  "version": "2.7",
+  "versionCode": 10,
+  "notes": "新增：标题旁常驻版本徽章，打开即见当前版本号；底部状态条同步显示版本",
+  "apk": "duizhang-2.7.apk"
 }
