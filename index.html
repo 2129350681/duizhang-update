@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.39';
+const APP_VERSION = 'v2.40';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2146,6 +2146,9 @@ async function parseImportXlsx(bytes){
     return { name: s.getAttribute('name'), file: target.indexOf('/') === 0 ? target.slice(1) : ('xl/' + target) };
   });
   const result = { goods: [], payments: [], returns: [], opening: null, openingNote: '', __sheetReturns: [], __summaryReturns: [], __summaryEnding: null };
+  // 预扫描：解析每个 sheet 并先确定期初（opening/openingNote）。多账期文件（如 2025 + 2024 两张连续年表）里，
+  // 期初注释带年份（如「2024年余额」）表示期初 = 该年年底余额，该年份及更早的账期表明细已含在期初中，不得重复计入。
+  const scan = [];
   for(const s of sheets){
     const xmlStr = files.get(s.file);
     if(!xmlStr) continue;
@@ -2153,19 +2156,30 @@ async function parseImportXlsx(bytes){
     const header = sheetHeaderRow(grid);
     const idx = detectHeader(header);
     const type = classifySheet(s.name, header, idx);
+    const item = { s, grid, header, idx, type, d: null };
+    if(type === 'goods') item.d = parseDetailSheet(grid, header, idx);
+    else if(type === 'summary') item.d = parseSummarySheet(grid, header, idx);
+    scan.push(item);
+    if(item.d && item.d.opening != null && result.opening == null){ result.opening = item.d.opening; result.openingNote = item.d.openingNote; }
+  }
+  let opYear = null;
+  if(result.openingNote){ const m = /^(\d{4})年/.exec(result.openingNote); if(m) opYear = parseInt(m[1], 10); }
+  for(const it of scan){
+    // 期初注释带年份时，跳过「标题年份 ≤ 期初年份」的明细账期表（期初已含其全部数据）；总账(summary)不跳过
+    if(opYear != null && it.type !== 'summary'){
+      const m = /^(\d{4})年/.exec(it.s.name);
+      if(m && parseInt(m[1], 10) <= opYear) continue;
+    }
+    const { grid, header, idx, type, d } = it;
     if(type === 'goods'){
-      const d = parseDetailSheet(grid, header, idx);
       result.goods = result.goods.concat(d.goods);
       result.payments = result.payments.concat(d.payments);
       result.returns = result.returns.concat(d.returns);
       result.__sheetReturns = result.__sheetReturns.concat(d.returns); // 明细表退货（供自检：不在总账退货区的可疑项）
-      if(result.opening == null && d.opening != null){ result.opening = d.opening; result.openingNote = d.openingNote; }
     }
     else if(type === 'returns') result.returns = result.returns.concat(parseReturnsSheet(grid, header, idx));
     else if(type === 'payments') result.payments = result.payments.concat(parsePaymentsSheet(grid, header, idx));
     else if(type === 'summary'){
-      const d = parseSummarySheet(grid, header, idx);
-      if(d.opening != null && result.opening == null){ result.opening = d.opening; result.openingNote = d.openingNote; }
       if(d.ending != null) result.__summaryEnding = d.ending;
       result.__summaryReturns = result.__summaryReturns.concat(d.returns);
       // 总账的付款/退货只与「其他 sheet」去重（同指纹只留一条）——不能对总账内部去重：
