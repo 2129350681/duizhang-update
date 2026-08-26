@@ -149,6 +149,7 @@
     <div class="field"><label>期初备注</label><input id="openingNote" placeholder="如：2023年初"></div>
     <div class="field"><label>对账截止说明（选填）</label><input id="cutoffNote" placeholder="如：2025年10月15日止"></div>
     <label class="lg-toggle"><input type="checkbox" id="largeMode"> 🔍 大字模式（字更大、按钮更好点，适合老花眼）</label>
+    <label class="lg-toggle"><input type="checkbox" id="autoPrice" checked> 💰 输入名称自动带出单价并跳到单价框（不想要可关掉）</label>
   </section>
 
   <nav class="tabs">
@@ -292,7 +293,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.26';
+const APP_VERSION = 'v2.27';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -310,36 +311,45 @@ function freshDb(){
   return { v: 2, current: c.id, customers: { [c.id]: c } };
 }
 function defaultRow(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', waybill:'', note:'' }; }
-/* 老年友好：常用名称库（从货款历史统计：{名称:{price:最近单价, count:次数}}），供选名称弹窗与单价自动记忆使用 */
+/* 老年友好：常用名称库（统计货款+退货记录：{key(小写):{name:最近写法, price:最近单价, count:次数}}），
+   供选名称弹窗与单价自动记忆使用；每次输入的名称保存后都会被记住，按出现频率排序 */
 function nameLib(){
   const lib = {};
-  for(const r of state.goods){
+  const rows = state.goods.concat(state.returns);
+  for(const r of rows){
     const n = String(r.name || '').trim();
     if(!n) continue;
-    if(!lib[n]) lib[n] = { price:'', count:0 };
-    lib[n].count++;
-    if(r.price && toNum(r.price) != null) lib[n].price = String(r.price);
+    const key = n.toLowerCase(); // 大小写归一：KT449 与 kt449 视为同一产品
+    if(!lib[key]) lib[key] = { name: n, price:'', count:0, bestCount:0, names: {} };
+    lib[key].count++; // 出现频率：录入次数越多排越前
+    lib[key].names[n] = (lib[key].names[n] || 0) + 1;
+    if(lib[key].names[n] > lib[key].bestCount){ lib[key].bestCount = lib[key].names[n]; lib[key].name = n; } // 显示/填入用出现最多的写法
+    if(r.price && toNum(r.price) != null){
+      const p = toNum(r.price);
+      const cur = lib[key].price ? toNum(lib[key].price) : null;
+      if(cur == null || p > cur) lib[key].price = String(r.price); // 单价记忆取历史最高（人为填进后仍可改）
+    }
   }
   return lib;
 }
-/* 打开「选常用名称」弹窗：搜索框输入一个字即时过滤，点选后回调 (name, price) */
+/* 打开「选常用名称」弹窗：按出现频率从多到少排大按钮，搜索框输入一个字即时过滤，点选后回调 (name, price) */
 function openNamePicker(onPick){
   const modal = document.getElementById('namePickerModal');
   const grid = document.getElementById('namePickerGrid');
   const search = document.getElementById('namePickerSearch');
   if(!modal || !grid) return;
   const lib = nameLib();
-  const allNames = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh'));
+  const allKeys = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh')); // 频率优先，同频率按拼音
   function render(filter){
     const q = String(filter || '').trim().toLowerCase();
-    const names = q ? allNames.filter(n => String(n).toLowerCase().includes(q)) : allNames; // 输入一个字就能搜到，不用翻找
-    if(names.length){
-      grid.innerHTML = names.map(n =>
-        '<button data-name="' + esc(n) + '">' + esc(n) +
-        (lib[n].price ? '<span class="np-price">单价 ' + esc(lib[n].price) + '</span>' : '') +
+    const keys = q ? allKeys.filter(k => k.includes(q)) : allKeys; // 输入一个字就能搜到，不用翻找
+    if(keys.length){
+      grid.innerHTML = keys.map(k =>
+        '<button data-name="' + esc(lib[k].name) + '">' + esc(lib[k].name) +
+        (lib[k].price ? '<span class="np-price">单价 ' + esc(lib[k].price) + '</span>' : '') +
         '</button>'
       ).join('');
-    } else if(!allNames.length){
+    } else if(!allKeys.length){
       grid.innerHTML = '<div class="name-picker-empty">还没有记住任何名称。先在「货款」里录一两笔（输入名称和单价），下次就能直接点选。</div>';
     } else {
       grid.innerHTML = '<div class="name-picker-empty">没有找到包含「' + esc(q) + '」的名称</div>';
@@ -355,7 +365,8 @@ function openNamePicker(onPick){
     const btn = e.target.closest('[data-name]');
     if(!btn) return;
     modal.classList.remove('show');
-    onPick && onPick(btn.dataset.name, lib[btn.dataset.name] ? lib[btn.dataset.name].price : '');
+    const meta = lib[String(btn.dataset.name || '').toLowerCase()];
+    onPick && onPick(btn.dataset.name, meta && meta.price ? meta.price : '');
   };
   modal.classList.add('show');
 }
@@ -364,6 +375,24 @@ function focusLastRow(tableEl){
   const inputs = tableEl.querySelectorAll('tbody tr:last-child input');
   if(inputs.length){
     try{ inputs[0].focus(); inputs[0].scrollIntoView({ block:'center' }); }catch(_){}
+  }
+}
+/* 设置开关：输入名称是否自动带出单价并跳到单价输入框（默认开，可在设置里关闭） */
+function autoPriceOn(){
+  try{ return localStorage.getItem('duizhang-auto-price') !== '0'; }catch(_){ return true; }
+}
+/* 聚焦表格最后一行（或指定行）的单价输入框，光标到末尾，方便直接改单价 */
+function focusPriceInput(tableEl){
+  if(!tableEl) return;
+  const tr = tableEl.querySelector('tbody tr:last-child');
+  if(!tr) return;
+  const pi = tr.querySelector('input[data-field="price"]');
+  if(pi){
+    try{
+      pi.focus();
+      if(pi.setSelectionRange) pi.setSelectionRange(pi.value.length, pi.value.length);
+      pi.scrollIntoView({ block:'center' });
+    }catch(_){}
   }
 }
 function updateDataStatus(){
@@ -616,13 +645,18 @@ function bindEditor(tableEl, rows, amountKey, onChange){
     if(!r) return;
     r[t.dataset.field] = t.value;
     if((t.dataset.field === 'qty' || t.dataset.field === 'price') && toNum(r.amt) != null){ r.amt = ''; } // 手动改数量/单价即解锁导入锁定的金额
-    // 单价自动记忆：输入名称时若历史里有该名称的单价且本行未填 → 自动带出（老年友好免重复打字）
+    // 单价自动记忆：输入名称时若历史里有该名称的单价且本行未填 → 自动带出并跳到单价框（老年友好免重复打字；设置里可关）
     if(t.dataset.field === 'name' && r.name && !r.price){
-      const hit = nameLib()[String(r.name).trim()];
+      const hit = nameLib()[String(r.name).trim().toLowerCase()];
       if(hit && hit.price){
         r.price = hit.price;
         const pc = tableEl.querySelector('input[data-field="price"][data-id="' + r.id + '"]');
-        if(pc) pc.value = hit.price;
+        if(pc){
+          pc.value = hit.price;
+          if(autoPriceOn()){
+            try{ pc.focus(); if(pc.setSelectionRange) pc.setSelectionRange(pc.value.length, pc.value.length); }catch(_){}
+          }
+        }
       }
     }
     save();
@@ -977,6 +1011,7 @@ function setup(){
       const r = state.goods[state.goods.length-1];
       r.name = name; if(price) r.price = price;
       save(); renderGoodsEditor(); renderAllPreviews(); focusLastRow(goodsEditor);
+      if(price && autoPriceOn()) focusPriceInput(goodsEditor); // 跳到单价框方便直接改
     });
   }
   function pickNameToReturns(){
@@ -985,6 +1020,7 @@ function setup(){
       const r = state.returns[state.returns.length-1];
       r.name = name; if(price) r.price = price;
       save(); renderReturnsEditor(); renderAllPreviews(); focusLastRow(returnsEditor);
+      if(price && autoPriceOn()) focusPriceInput(returnsEditor);
     });
   }
   document.getElementById('pickNameGoods').addEventListener('click', pickNameToGoods);
@@ -999,6 +1035,14 @@ function setup(){
     largeModeEl.addEventListener('change', () => {
       document.body.classList.toggle('large-mode', largeModeEl.checked);
       try{ localStorage.setItem('duizhang-large-mode', largeModeEl.checked ? '1' : '0'); }catch(_){}
+    });
+  }
+  // 自动带出单价开关（默认开；localStorage 持久化）
+  const autoPriceEl = document.getElementById('autoPrice');
+  if(autoPriceEl){
+    autoPriceEl.checked = autoPriceOn();
+    autoPriceEl.addEventListener('change', () => {
+      try{ localStorage.setItem('duizhang-auto-price', autoPriceEl.checked ? '1' : '0'); }catch(_){}
     });
   }
 
