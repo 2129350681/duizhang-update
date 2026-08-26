@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.45';
+const APP_VERSION = 'v2.46';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1849,6 +1849,29 @@ function cleanDate(s){
   if(!m) return t;
   return m[1] + '.' + m[2] + (m[3] ? '.' + m[3] : '');
 }
+// 日期低级笔误自动补全：年份少写数字（如「202.4.26」→「2026.4.26」；「23.4.26」→「2023.4.26」）
+// 只处理纯数字日期串（含中文如「2023.1月」「2026.11止」不碰）；年份 2 位→20xx，3 位→补第四位取与参考年份最接近的；
+// 月份>12 或 日>31 视为写反/异常，不猜。参考年份：refDate（上一行日期）年份，否则当前年份。
+function fixDateStr(raw, refDate){
+  if(!raw) return raw;
+  const s = String(raw).trim();
+  const m = /^(\d{1,4})[.\-\/](\d{1,2})(?:[.\-\/](\d{1,2}))?$/.exec(s);
+  if(!m) return s;
+  let Y = parseInt(m[1], 10);
+  const Mo = parseInt(m[2], 10), D = m[3] ? parseInt(m[3], 10) : null;
+  if(Y >= 1000) return s; // 4 位年份正常
+  if(Mo > 12 || (D != null && D > 31)) return s; // 疑似月份/日写反，不猜
+  let refYear = null;
+  if(refDate){ const ly = /(19|20)\d{2}/.exec(String(refDate)); if(ly) refYear = parseInt(ly[0], 10); }
+  if(refYear == null) refYear = new Date().getFullYear();
+  if(Y < 100) Y = 2000 + Y;
+  else{
+    let best = Y * 10, bd = Math.abs(best - refYear);
+    for(let d4 = 1; d4 <= 9; d4++){ const y = Y * 10 + d4; const dd = Math.abs(y - refYear); if(dd < bd){ bd = dd; best = y; } }
+    Y = best;
+  }
+  return Y + '.' + Mo + (D != null ? '.' + D : '');
+}
 function sheetHeaderRow(grid){
   for(const row of grid){
     const joined = row.join('|');
@@ -1910,7 +1933,9 @@ function parseDetailSheet(grid, headerRow, idx){
   for(let r = start; r < grid.length; r++){
     const row = grid[r];
     const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
-    const name = g(idx.name), dateRaw = g(idx.date);
+    const name = g(idx.name);
+    // 日期低级笔误自动补全（「202.4.26」→「2026.4.26」；参考上一行日期年份）
+    let dateRaw = fixDateStr(g(idx.date), lastDate);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
     const payRaw = g(idx.pay), payNum0 = toNum(payRaw);
@@ -2032,7 +2057,9 @@ function parseReturnsSheet(grid, headerRow, idx){
   let lastDate = '';
   for(let r = start; r < grid.length; r++){
     const g = (i) => (i == null || grid[r][i] == null) ? '' : String(grid[r][i]).trim();
-    const name = g(idx.name), dateRaw = g(idx.date);
+    const name = g(idx.name);
+    // 日期低级笔误自动补全（参考上一行日期年份）
+    let dateRaw = fixDateStr(g(idx.date), lastDate);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
     // 日期列为纯中文文字标签（如汇总行「0:'退货' 1:'37' 5:'91130'」）→ 跳过
@@ -2052,7 +2079,8 @@ function parsePaymentsSheet(grid, headerRow, idx){
   for(let r = start; r < grid.length; r++){
     const row = grid[r];
     const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
-    const date = g(idx.date);
+    // 日期低级笔误自动补全（「202.4.26」→「2026.4.26」，无上一行可参考时用当前年份）
+    let date = fixDateStr(g(idx.date), null);
     if(/总计|合计|累计/.test(date + '|' + row.join('|'))) continue;
     // 付款数据行必须日期列含 4 位年份（每笔付款都有日期）；日期列为残留数字/空 → 汇总行跳过
     //（如 ea92690e 付款表末行「0:'485' 2:'1394304'」= 总计行，日期列是残留单号）
@@ -2087,7 +2115,9 @@ function parseSummarySheet(grid, headerRow, idx){
   for(let r = start; r < grid.length; r++){
     const row = grid[r];
     const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
-    const name = g(nameCol), dateRaw = g(idx.date);
+    const name = g(nameCol);
+    // 日期低级笔误自动补全（参考上一行日期年份）
+    let dateRaw = fixDateStr(g(idx.date), lastDate);
     const amtRaw = g(idx.amount), amtNum = toNum(amtRaw);
     const qty = g(idx.qty), price = g(idx.price);
     const payRaw = g(idx.pay), payNum = toNum(payRaw);
