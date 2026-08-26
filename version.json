@@ -1,6 +1,6 @@
 {
-  "version": "2.3",
-  "versionCode": 6,
-  "notes": "新增：页面内容在线同步——电脑上改完 HTML 推上去，手机打开 App 即新版，无需重新安装；优化更新检查速度（CDN 优先）",
-  "apk": "duizhang-2.3.apk"
+  "version": "2.4",
+  "versionCode": 7,
+  "notes": "电脑版与手机版功能完全同步：桌面浏览器同样获得数据状态条、输入兜底（Android WebView 兼容）、数字键盘、导出系统分享等优化；版本号显示不再写死 v2.0",
+  "apk": "duizhang-2.4.apk"
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>对账单生成器（手机版）</title>
+<title>对账单生成器</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; background: #eef1f5; color: #2b2f36; font-size: 14px; }
@@ -227,6 +227,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
+const APP_VERSION = 'v2.4';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -243,7 +244,7 @@ function focusLastRow(tableEl){
 function updateDataStatus(){
   const el = document.getElementById('dataStatus');
   if(!el) return;
-  el.textContent = '对账单 v2.0 ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
+  el.textContent = '对账单 ' + APP_VERSION + ' ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
 }
 function defaultPayment(){ return { id: uid(), date:'', amount:'', note:'' }; }
 function defaultReturn(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', note:'' }; }
