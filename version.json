@@ -1,6 +1,6 @@
 {
-  "version": "2.4",
-  "versionCode": 7,
-  "notes": "电脑版与手机版功能完全同步：桌面浏览器同样获得数据状态条、输入兜底（Android WebView 兼容）、数字键盘、导出系统分享等优化；版本号显示不再写死 v2.0",
-  "apk": "duizhang-2.4.apk"
+  "version": "2.5",
+  "versionCode": 8,
+  "notes": "1. 修复手机端更新失败：多通道拉取（jsdelivr 三域名+raw），弱网超时放宽，启动秒开内置版后自动后台同步 2. 新增「🔄 检查更新」按钮可手动同步 3. 联网失败时明确提示，不再静默回退",
+  "apk": "duizhang-2.5.apk"
 }

@@ -54,7 +54,7 @@
   table.pv tr.year-total td { font-weight: 700; background: #fdeee0; }
   table.pv tr.sumhead td { background: #f2f5f9; font-weight: 600; text-align: center; }
   .empty-tip { color: #99a; padding: 20px 0; text-align: center; font-size: 13px; }
-  .actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e2e6ec; padding: 12px 16px; display: flex; gap: 10px; justify-content: center; box-shadow: 0 -2px 10px rgba(0,0,0,.06); z-index: 50; }
+  .actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e2e6ec; padding: 12px 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,.06); z-index: 50; }
   details.help { margin-bottom: 12px; }
   details.help summary { cursor: pointer; color: #1f6feb; font-size: 13px; padding: 4px 0; }
   details.help .help-body { font-size: 13px; color: #556; line-height: 1.8; padding: 8px 12px; background: #f7f9fc; border-radius: 8px; margin-top: 6px; }
@@ -164,6 +164,7 @@
     <button id="importXlsx">📥 导入 Excel (.xlsx)</button>
     <button id="exportXlsx" class="primary">⬇️ 导出 Excel (.xlsx)</button>
     <button id="printBtn">🖨️ 打印</button>
+    <button id="checkUpdate">🔄 检查更新</button>
     <button id="resetAll" class="danger">🗑️ 清空全部数据</button>
     <input type="file" id="importFile" accept=".xlsx" style="display:none">
   </div>
@@ -227,7 +228,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.4';
+const APP_VERSION = 'v2.5';
 const LS_KEY = 'duizhang-generator-v1';
 let state = {
   partyA: '', partyB: '', opening: '', openingNote: '', cutoffNote: '',
@@ -658,6 +659,18 @@ function setup(){
       document.getElementById('openingNote').value = '';
       document.getElementById('cutoffNote').value = '';
       renderGoodsEditor(); renderPaymentsEditor(); renderReturnsEditor(); renderAllPreviews();
+    }
+  });
+
+  // 检查更新：App 内先保存当前输入，再走原生桥重新拉取远程版；浏览器内直接刷新
+  document.getElementById('checkUpdate').addEventListener('click', () => {
+    if(window.AndroidBridge && typeof AndroidBridge.reloadRemote === 'function'){
+      if(confirm('将重新从服务器拉取最新版本，当前输入会自动保存。确定？')){
+        save();
+        AndroidBridge.reloadRemote();
+      }
+    } else {
+      location.reload();
     }
   });
 
