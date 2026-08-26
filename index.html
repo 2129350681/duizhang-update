@@ -62,6 +62,10 @@
   .lg-toggle input { width: 18px; height: 18px; }
   /* 选名称面板 */
   .name-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-height: 55vh; overflow-y: auto; margin: 10px 0; }
+  .name-picker-search { width: 100%; padding: 12px 14px; font-size: 16px; border: 2px solid #d4d9e0; border-radius: 10px; margin: 6px 0 2px; box-sizing: border-box; background: #fff; color: #223; }
+  .name-picker-search::placeholder { color: #99a; }
+  .name-picker-search:focus { outline: none; border-color: #1f6feb; background: #f2f7ff; }
+  body.large-mode .name-picker-search { font-size: 18px; padding: 14px 16px; }
   .name-picker-grid button { padding: 14px 10px; font-size: 15px; text-align: center; background: #fff; border: 1px solid #d4d9e0; border-radius: 10px; cursor: pointer; line-height: 1.5; }
   .name-picker-grid button:hover { border-color: #1f6feb; background: #f2f7ff; }
   .name-picker-grid .np-price { display: block; font-size: 12px; color: #889; margin-top: 2px; }
@@ -250,11 +254,12 @@
 </div>
 
 
-<!-- 选名称弹窗（常用名称大按钮，老年友好免打字） -->
+<!-- 选名称弹窗（常用名称大按钮 + 搜索，老年友好免打字） -->
 <div class="modal-mask" id="namePickerModal">
   <div class="modal">
     <h3>📇 选常用名称</h3>
-    <p style="font-size:13px;color:#667;margin-bottom:4px">点一个名称就填到最新一行，不用打字（带出的单价可改）。</p>
+    <p style="font-size:13px;color:#667;margin-bottom:4px">输入一个字就能搜，点名称填到最新一行（带出的单价可改）。</p>
+    <input id="namePickerSearch" class="name-picker-search" type="text" placeholder="🔍 输入一个字搜索（如：脚、KT）" autocomplete="off">
     <div id="namePickerGrid" class="name-picker-grid"></div>
     <div class="modal-actions">
       <button id="namePickerCancel">取消</button>
@@ -287,7 +292,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.25';
+const APP_VERSION = 'v2.26';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -317,21 +322,34 @@ function nameLib(){
   }
   return lib;
 }
-/* 打开「选常用名称」弹窗：按使用次数从多到少排大按钮，点选后回调 (name, price) */
+/* 打开「选常用名称」弹窗：搜索框输入一个字即时过滤，点选后回调 (name, price) */
 function openNamePicker(onPick){
   const modal = document.getElementById('namePickerModal');
   const grid = document.getElementById('namePickerGrid');
+  const search = document.getElementById('namePickerSearch');
   if(!modal || !grid) return;
   const lib = nameLib();
-  const names = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh'));
-  if(names.length){
-    grid.innerHTML = names.map(n =>
-      '<button data-name="' + esc(n) + '">' + esc(n) +
-      (lib[n].price ? '<span class="np-price">单价 ' + esc(lib[n].price) + '</span>' : '') +
-      '</button>'
-    ).join('');
-  } else {
-    grid.innerHTML = '<div class="name-picker-empty">还没有记住任何名称。先在「货款」里录一两笔（输入名称和单价），下次就能直接点选。</div>';
+  const allNames = Object.keys(lib).sort((a,b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh'));
+  function render(filter){
+    const q = String(filter || '').trim().toLowerCase();
+    const names = q ? allNames.filter(n => String(n).toLowerCase().includes(q)) : allNames; // 输入一个字就能搜到，不用翻找
+    if(names.length){
+      grid.innerHTML = names.map(n =>
+        '<button data-name="' + esc(n) + '">' + esc(n) +
+        (lib[n].price ? '<span class="np-price">单价 ' + esc(lib[n].price) + '</span>' : '') +
+        '</button>'
+      ).join('');
+    } else if(!allNames.length){
+      grid.innerHTML = '<div class="name-picker-empty">还没有记住任何名称。先在「货款」里录一两笔（输入名称和单价），下次就能直接点选。</div>';
+    } else {
+      grid.innerHTML = '<div class="name-picker-empty">没有找到包含「' + esc(q) + '」的名称</div>';
+    }
+  }
+  render('');
+  if(search){
+    search.value = '';
+    search.oninput = () => render(search.value);
+    setTimeout(() => { try{ search.focus(); }catch(_){} }, 60); // 弹窗打开即聚焦，直接打字搜索
   }
   grid.onclick = (e) => {
     const btn = e.target.closest('[data-name]');
