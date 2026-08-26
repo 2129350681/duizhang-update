@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.41';
+const APP_VERSION = 'v2.42';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1977,6 +1977,15 @@ function parseDetailSheet(grid, headerRow, idx){
             if(n != null){ pv = n; break; }
           }
         }
+      }
+      if(pv == null && balNum != null){
+        // 余额差额兜底：付款列未写、行内无其他数字，但余额列比上一笔余额少（隐含付款，如「2021.10.20 … 28000」→ 隐含 3140）
+        let prevB = null;
+        for(let rr = r - 1; rr >= start; rr--){
+          const bb = toNum(grid[rr][idx.balance]);
+          if(bb != null){ prevB = bb; break; }
+        }
+        if(prevB != null && balNum < prevB) pv = prevB - balNum;
       }
       if(pv != null){
         payments.push({ id: uid(), date: (dateRaw && /\d{4}/.test(dateRaw)) ? cleanDate(dateRaw) : lastDate, amount: String(pv), note: (name && /[\u4e00-\u9fa5]/.test(name)) ? name : note });
