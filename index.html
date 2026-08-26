@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.46';
+const APP_VERSION = 'v2.47';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2951,17 +2951,29 @@ function aiHandle(raw){
   /* 数据查询 */
   const all = /所有|全部|每个|每一|总共|一共|总计|合计所有/.test(t);
   const listQ = /几个客户|客户列表|有哪些客户|多少客户|客户名单/.test(t);
-  if(all || /合计|汇总|总数/.test(t)){
+  // 「别人欠我们多少」类：问欠款总额（须含 总共/一共/全部/所有/别人/他们/合计 等范围词，避免截胡「房正伟欠多少」的单客户查询）
+  const wantOwe = /欠/.test(t) && /总共|一共|全部|所有|别人|他们|合计|汇总|总数/.test(t);
+  if(all || /合计|汇总|总数/.test(t) || wantOwe){
     const lines = [];
-    let to = 0, tg = 0, tp = 0, tr = 0, tc = 0;
+    let to = 0, tg = 0, tp = 0, tr = 0, tc = 0, owe = 0, oweN = 0, over = 0, overN = 0;
+    const oweLines = [];
     for(const c of customerList()){
       if(!c.partyB) continue;
       const s = aiStats(c);
+      if(s.end > 0){ owe += s.end; oweN++; oweLines.push((c.no ? c.no + ' ' : '') + c.partyB + '：' + aiMoney(s.end)); }
+      else if(s.end < 0){ over += -s.end; overN++; }
       lines.push((c.no ? c.no + ' ' : '') + c.partyB + '：期末 ' + aiMoney(s.end) + '（期初 ' + aiMoney(s.op) + ' 货 ' + aiMoney(s.g) + ' 付 ' + aiMoney(s.p) + ' 退 ' + aiMoney(s.r) + '）');
       to += s.op; tg += s.g; tp += s.p; tr += s.r; tc++;
     }
+    if(wantOwe){
+      let msg = '【别人欠我们多少】\n对方共欠我们 ' + aiMoney(owe) + ' 元（' + oweN + ' 个客户）';
+      if(oweLines.length) msg += '\n' + oweLines.join('\n');
+      if(overN) msg += '\n另有 ' + overN + ' 个客户已多付 ' + aiMoney(over) + ' 元（是我们欠他们的）';
+      return aiSay(msg);
+    }
     lines.push('——————————');
     lines.push('共 ' + tc + ' 个客户，总计：期初 ' + aiMoney(to) + ' 货款 ' + aiMoney(tg) + ' 付款 ' + aiMoney(tp) + ' 退货 ' + aiMoney(tr));
+    lines.push('对方共欠我们：' + aiMoney(owe) + ' 元' + (overN ? '（另有 ' + overN + ' 个客户多付 ' + aiMoney(over) + ' 元）' : ''));
     return aiSay(lines.join('\n'));
   }
   if(listQ){
