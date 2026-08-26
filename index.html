@@ -118,6 +118,24 @@
   .back-top:active{transform:scale(.92)}
   body.large-mode .back-top{width:56px;height:56px;font-size:27px;right:14px;bottom:96px}
   @media (max-width:640px){.back-top{bottom:70px}}
+  /* ===== AI 助手（本地智能版） ===== */
+  .ai-fab{position:fixed;right:16px;bottom:140px;width:52px;height:52px;border-radius:50%;border:none;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:24px;cursor:pointer;z-index:998;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(99,102,241,.45);-webkit-tap-highlight-color:transparent}
+  .ai-fab:active{transform:scale(.92)}
+  body.large-mode .ai-fab{width:62px;height:62px;font-size:28px;right:14px;bottom:158px}
+  @media (max-width:640px){.ai-fab{bottom:122px}}
+  .ai-chat{width:92vw;max-width:480px;height:76vh;max-height:640px;display:flex;flex-direction:column;border-radius:14px;overflow:hidden}
+  .ai-chat-head{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;padding:10px 14px;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:space-between;flex:none}
+  .ai-chat-head button{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1}
+  .ai-chat-msgs{flex:1;overflow-y:auto;padding:12px;background:#f7f8fb;display:flex;flex-direction:column;gap:8px}
+  .ai-msg{max-width:86%;padding:8px 11px;border-radius:12px;font-size:14px;line-height:1.65;white-space:pre-wrap;word-break:break-word}
+  .ai-msg.user{align-self:flex-end;background:#6366f1;color:#fff;border-bottom-right-radius:3px}
+  .ai-msg.bot{align-self:flex-start;background:#fff;color:#223;border:1px solid #e5e7ef;border-bottom-left-radius:3px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .ai-chips{flex:none;display:flex;gap:6px;padding:8px 10px;background:#fff;border-top:1px solid #eef0f5;overflow-x:auto}
+  .ai-chip{flex:none;font-size:12px;color:#4f46e5;background:#eef0ff;border:none;border-radius:20px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+  .ai-chip:active{background:#e0e4ff}
+  .ai-chat-in{flex:none;display:flex;gap:8px;padding:10px;background:#fff;border-top:1px solid #eef0f5}
+  .ai-chat-in input{flex:1;border:1px solid #d5d9e5;border-radius:20px;padding:9px 14px;font-size:15px;outline:none}
+  .ai-chat-in button{flex:none;border:none;border-radius:20px;background:#6366f1;color:#fff;padding:0 18px;font-size:15px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -284,6 +302,19 @@
   </div>
 </div>
 
+<!-- AI 助手弹窗（本地智能：读全部账单 + 答使用问题 + 帮操作） -->
+<div class="modal-mask" id="aiChatModal">
+  <div class="modal ai-chat">
+    <div class="ai-chat-head"><span>💬 对账小助手</span><button id="aiChatClose" aria-label="关闭">✕</button></div>
+    <div id="aiChatMsgs" class="ai-chat-msgs"></div>
+    <div class="ai-chips" id="aiChatChips"></div>
+    <div class="ai-chat-in">
+      <input id="aiChatInput" type="text" placeholder="问我问题，或让我帮你操作…" autocomplete="off">
+      <button id="aiChatSend">发送</button>
+    </div>
+  </div>
+</div>
+
 <script>
 "use strict";
 /* ================= 工具函数 ================= */
@@ -309,7 +340,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.32';
+const APP_VERSION = 'v2.34';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1403,6 +1434,40 @@ function setup(){
     backTopBtn.addEventListener('click', () => {
       try{ window.scrollTo({ top:0, behavior:'smooth' }); }catch(_){ window.scrollTo(0, 0); }
     });
+  }
+  // AI 助手
+  const aiModal = document.getElementById('aiChatModal');
+  const aiFab = document.getElementById('aiFab');
+  if(aiModal && aiFab){
+    const openAI = () => {
+      aiModal.classList.add('show');
+      if(!__aiOpeningShown){
+        __aiOpeningShown = true;
+        aiSay('你好，我是对账小助手 🤖\n\n我能读取你全部账单数据，帮你：\n① 查数据：房正伟的余额 / 所有客户合计\n② 帮你操作：导出 Excel / 打印 / 新建客户 张三 / 切到 05\n③ 教用法：怎么导入账单 / 数据会不会丢\n\n直接问我吧！');
+      }
+      const inp = document.getElementById('aiChatInput');
+      if(inp) setTimeout(() => { try{ inp.focus(); }catch(_){} }, 80);
+    };
+    aiFab.addEventListener('click', openAI);
+    document.getElementById('aiChatClose').addEventListener('click', () => aiModal.classList.remove('show'));
+    aiModal.addEventListener('click', e => { if(e.target === aiModal) aiModal.classList.remove('show'); });
+    const sendAI = () => {
+      const inp = document.getElementById('aiChatInput');
+      const v = inp.value.trim();
+      if(v) aiAsk(v);
+    };
+    document.getElementById('aiChatSend').addEventListener('click', sendAI);
+    document.getElementById('aiChatInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); sendAI(); } });
+    const chips = ['房正伟的余额','所有客户合计','怎么导出 Excel','新建客户 张三','切到 05','大字模式'];
+    const chipBox = document.getElementById('aiChatChips');
+    if(chipBox){
+      for(const c of chips){
+        const b = document.createElement('button');
+        b.className = 'ai-chip'; b.textContent = c;
+        b.addEventListener('click', () => { aiAsk(c); });
+        chipBox.appendChild(b);
+      }
+    }
   }
   // 客户切换
   renderCustomerSelector();
@@ -2570,7 +2635,166 @@ window.__duizhangImportTest = async function(b64, mode){
     totals: { goods: totalAll(state.goods), payments: totalPayAll(), returns: totalAll(state.returns), balance: buildSummaryRows().map(r => r.bal).pop() }
   };
 };
+/* ================= AI 助手（本地智能版：读取全部账单 + 回答使用问题 + 帮助操作，完全离线） ================= */
+function aiMoney(n){ return n == null || !isFinite(n) ? '0' : String(round2(n)); }
+function aiTotal(rows, key){ return round2(rows.reduce((s,r)=>{ const v = toNum(r[key]); return v == null ? s : s + v; }, 0)); }
+/* 归一化：去空白/标点/小写，用于关键词匹配 */
+function aiNorm(s){ return String(s == null ? '' : s).toLowerCase().replace(/[\s，。！？、,.!?：:；;""''“”‘’（）()【】\[\]]/g, ''); }
+/* 在输入里找客户：先按编号（05/5号/第5个），再按名字包含 */
+function aiCustOf(t){
+  const list = customerList();
+  const mm = t.match(/(?:^|\D)(0?\d{1,2})(?:号|个)?(?:\D|$)/);
+  if(mm){ const no = mm[1].padStart(2, '0'); const c = list.find(x => x.no === no); if(c) return c; }
+  for(const c of list){
+    const n = aiNorm(c.partyB);
+    if(n && t.includes(n)) return c;
+  }
+  return null;
+}
+function aiStats(c){
+  const op = toNum(c.opening) || 0;
+  const g = aiTotal(c.goods, 'amt'), p = aiTotal(c.payments, 'amount'), r = aiTotal(c.returns, 'amt');
+  return { op, g, p, r, end: round2(op + g - p - r), gN: c.goods.length, pN: c.payments.length, rN: c.returns.length };
+}
+let __aiOpeningShown = false;
+function aiAddMsg(role, text){
+  const box = document.getElementById('aiChatMsgs');
+  if(!box) return;
+  const d = document.createElement('div');
+  d.className = 'ai-msg ' + role;
+  d.innerHTML = esc(text); // 内容全部转义，防名称/输入里的特殊字符破坏布局
+  box.appendChild(d);
+  box.scrollTop = box.scrollHeight;
+}
+function aiSay(text){ aiAddMsg('bot', text); }
+function aiAsk(raw){
+  const input = document.getElementById('aiChatInput');
+  if(input) input.value = '';
+  aiAddMsg('user', raw);
+  aiHandle(raw);
+}
+const AI_FAQ = [
+  { k:['怎么导出','如何导出','怎么下载','存成excel','存成文件','导出对账单'], a:'点顶部蓝色「📥 导出 Excel」按钮，会生成 Excel 文件（含 总账/货款/付款/退货 四个表），发给对方或自己留底都行。' },
+  { k:['怎么打印','如何打印','打印对账单','打出来'], a:'点「🖨️ 打印」按钮，生成对账单预览后调起打印（App 里也可直接打印或存成图片）。' },
+  { k:['怎么导入','如何导入','导入账单','读excel','读账单'], a:'点「📥 导入」按钮选 Excel 账单文件；或点「📋 批量粘贴」把 Excel 里的行复制进来。' },
+  { k:['数据存','会不会丢','丢失','备份','留底'], a:'数据存在手机/电脑本机（浏览器本地存储），不上传网络。建议定期点「导出 Excel」留底；卸载 App 或清浏览器数据会丢，务必先导出。' },
+  { k:['期初是什么','期初怎么填','期初'], a:'期初 = 开始对账前对方还欠（或预存）的金额，在设置里填。余额 = 期初 + 货款 − 付款 − 退货。' },
+  { k:['余额怎么算','期末怎么算','怎么算余额','怎么算'], a:'期末余额 = 期初 + 货款合计 − 付款合计 − 退货合计，程序在「汇总」里自动算好。' },
+  { k:['检查更新','更新版本','升级','新版'], a:'App 里点「🔄 检查更新」，有新版本会提示安装；也可以直接装桌面上的安装包（对账单-手机版-vX.apk）。' },
+  { k:['大字模式','字体太小','看不清','字太小'], a:'设置里打开「🔍 大字模式」，字更大、按钮更好点。' },
+  { k:['选名称','常用名称','免打字'], a:'货款/退货工具栏有「📇 选名称」大按钮，点开搜索或点选，单价自动带出。' },
+  { k:['怎么加客户','新建客户','加一个人'], a:'直接对我说「新建客户 张三」；或顶部客户框点「➕ 新建客户」输入名字（甲方默认许道丰）。' },
+  { k:['切换客户','换客户','换一个人','换到'], a:'顶部客户下拉框直接选；或对我说「切到 05 陈高弟」。每个客户数据互相独立。' },
+  { k:['编号是什么','前面数字','号码'], a:'客户名字前的编号（01/02…）是固定编号，方便对号查找；删除客户后编号不变、不补。' },
+  { k:['单价自动','记忆单价','自动带出'], a:'输入名称后自动带出历史单价，可在设置里关掉「自动带出单价」。' },
+  { k:['粘贴','复制进来'], a:'点「📋 批量粘贴」，把 Excel 里的行直接复制进来（日期/名称/数量/单价…）。' },
+];
+function aiHandle(raw){
+  const t = aiNorm(raw);
+  if(!t) return aiSay('请输入内容。');
+  /* 打招呼 / 帮助 */
+  if(/^(你好|您好|嗨|在吗|hello|hi|哈喽|早上好|晚上好|下午好|help|帮助|你会什么|能做什么|怎么用)$|^(你好|您好|嗨|在吗|哈喽|早上好|晚上好|下午好|help|帮助|你会什么|能做什么|怎么用)/.test(t)){
+    return aiSay('我是对账小助手，能帮你：\n\n① 查数据：如「房正伟的余额」「所有客户合计」\n② 帮你操作：如「导出 Excel」「打印」「新建客户 张三」「切到 05」\n③ 教用法：如「怎么导入账单」「数据会不会丢」\n\n直接打字问我就行。');
+  }
+  /* 危险操作：清空/删除记录 */
+  if(/清空|清除|删掉|删除|清掉|全部清/.test(t)){
+    const isDel = /删/.test(t);
+    if(/客户|人$/.test(t) && /删/.test(t)){
+      const c = aiCustOf(t) || currentCustomer();
+      if(!confirm('确定删除客户「' + customerDisplay(c) + '」的全部账目？无法恢复！')) return aiSay('已取消，没有删除。');
+      deleteCustomerFlowFor(c);
+      return aiSay('已删除客户「' + customerDisplay(c) + '」及其全部账目。');
+    }
+    const kind = /付款/.test(t) ? 'payments' : (/退货/.test(t) ? 'returns' : 'goods');
+    const c = aiCustOf(t) || currentCustomer();
+    const label = customerDisplay(c);
+    if(!confirm('确定' + (isDel ? '删除' : '清空') + '「' + label + '」的' + (kind === 'payments' ? '付款记录' : kind === 'returns' ? '退货记录' : '货款明细') + '？无法恢复！')) return aiSay('已取消，没动任何数据。');
+    if(c && c.id !== db.current){ db.current = c.id; state = c; }
+    const n = state[kind].length;
+    state[kind] = [];
+    save(); syncSettingsInputs(); rerenderEditors(); renderAllPreviews();
+    return aiSay('已' + (isDel ? '删除' : '清空') + '「' + label + '」的' + (kind === 'payments' ? '付款' : kind === 'returns' ? '退货' : '货款') + '记录（' + n + ' 笔）。');
+  }
+  /* 新建客户 */
+  if(/新建|新增|添加|加一个|加上|建一个/.test(t) && /客户|人/.test(t)){
+    const nm = raw.replace(/[新建新增添加加建一个客户人给我帮我叫名字是]/g, '').trim();
+    const name = nm && nm.length <= 12 ? nm : null;
+    if(!name) return aiSay('请说清楚客户名字，例如：新建客户 张三。');
+    if(customerList().some(c => c.partyB === name)) return aiSay('已经有同名客户「' + name + '」，不能重复建。');
+    const c = newCustomerObj(name);
+    db.customers[c.id] = c; db.current = c.id; state = c;
+    save(); renderCustomerSelector(); syncSettingsInputs(); rerenderEditors(); renderAllPreviews();
+    return aiSay('已新建客户「' + name + '」（编号 ' + c.no + '，甲方许道丰），现在可以开始录入。');
+  }
+  /* 操作：导出 / 打印 / 选名称 / 大字模式 */
+  if(/导出|下载|excel|xlsx|存成文件|存成excel/.test(t)){
+    aiSay('好的，正在导出 Excel…');
+    setTimeout(() => { try{ exportXlsx(); }catch(e){ aiSay('导出没成功，请点工具栏「📥 导出 Excel」按钮试试。'); } }, 60);
+    return;
+  }
+  if(/打印/.test(t)){
+    renderAllPreviews();
+    setTimeout(() => { const b = document.getElementById('printBtn'); if(b) b.click(); else aiSay('没找到打印按钮。'); }, 60);
+    return aiSay('好的，正在生成打印预览…');
+  }
+  if(/选名称|常用名称/.test(t) && /货款|退货/.test(t)){ openNamePicker(() => {}); return aiSay('已打开「选名称」窗口，点名称自动填入最新一行。'); }
+  if(/大字/.test(t)){
+    const el = document.getElementById('largeMode');
+    if(el){ const on = /开|大/.test(t) && !/关|取消|不要/.test(t) ? true : (el.checked ? false : true); el.checked = on; document.body.classList.toggle('large-mode', on); try{ localStorage.setItem('duizhang-large-mode', on ? '1' : '0'); }catch(_){} }
+    return aiSay('已' + ((document.getElementById('largeMode') && document.getElementById('largeMode').checked) ? '开启' : '关闭') + '大字模式。');
+  }
+  /* 切换客户（优先于 FAQ/数据查询，如「切到 05」「换到 房正伟」） */
+  if(/切到|切至|切换|换到|换至|选到|打开客户/.test(t)){
+    const c2 = aiCustOf(t);
+    if(c2 && c2.id !== db.current){ selectCustomer(c2.id); return aiSay('已切换到客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。'); }
+    if(c2) return aiSay('现在就是客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。');
+  }
+  /* FAQ（使用知识） */
+  for(const f of AI_FAQ){ if(f.k.some(k => t.includes(k))) return aiSay(f.a); }
+  /* 数据查询 */
+  const all = /所有|全部|每个|每一|总共|一共|总计|合计所有/.test(t);
+  const listQ = /几个客户|客户列表|有哪些客户|多少客户|客户名单/.test(t);
+  if(all || /合计|汇总|总数/.test(t)){
+    const lines = [];
+    let to = 0, tg = 0, tp = 0, tr = 0, tc = 0;
+    for(const c of customerList()){
+      if(!c.partyB) continue;
+      const s = aiStats(c);
+      lines.push((c.no ? c.no + ' ' : '') + c.partyB + '：期末 ' + aiMoney(s.end) + '（期初 ' + aiMoney(s.op) + ' 货 ' + aiMoney(s.g) + ' 付 ' + aiMoney(s.p) + ' 退 ' + aiMoney(s.r) + '）');
+      to += s.op; tg += s.g; tp += s.p; tr += s.r; tc++;
+    }
+    lines.push('——————————');
+    lines.push('共 ' + tc + ' 个客户，总计：期初 ' + aiMoney(to) + ' 货款 ' + aiMoney(tg) + ' 付款 ' + aiMoney(tp) + ' 退货 ' + aiMoney(tr));
+    return aiSay(lines.join('\n'));
+  }
+  if(listQ){
+    const lines = customerList().filter(c => c.partyB).map(c => (c.no ? c.no + ' ' : '') + c.partyB);
+    return aiSay('当前共 ' + lines.length + ' 个客户：\n' + lines.join('、'));
+  }
+  const c = aiCustOf(t);
+  if(c){
+    const s = aiStats(c);
+    const name = customerDisplay(c);
+    const keys = [];
+    if(/期初/.test(t) || /余额|期末/.test(t) || /货款/.test(t) || /付款/.test(t) || /退货/.test(t) || /笔|多少钱|多少|合计|总数/.test(t)) keys.push('');
+    return aiSay('【' + name + '】（编号 ' + (c.no || '—') + '）\n期初：' + aiMoney(s.op) + '\n货款：' + s.gN + ' 笔，合计 ' + aiMoney(s.g) + '\n付款：' + s.pN + ' 笔，合计 ' + aiMoney(s.p) + '\n退货：' + s.rN + ' 笔，合计 ' + aiMoney(s.r) + '\n期末余额：' + aiMoney(s.end));
+  }
+  if(/切|换|选|打开/.test(t)){
+    const c2 = aiCustOf(t);
+    if(c2){ selectCustomer(c2.id); return aiSay('已切换到客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。'); }
+  }
+  return aiSay('这个我还不会，你可以问我：\n· 房正伟的余额\n· 所有客户合计\n· 怎么导出 Excel\n· 新建客户 张三\n· 切到 05\n· 怎么导入账单');
+}function deleteCustomerFlowFor(c){
+  if(!c || !db.customers[c.id]) return;
+  delete db.customers[c.id];
+  const ids = Object.keys(db.customers);
+  if(!ids.length){ db = freshDb(); }
+  db.current = ids.length ? ids[0] : db.current;
+  state = db.customers[db.current];
+  save(); renderCustomerSelector(); syncSettingsInputs(); rerenderEditors(); renderAllPreviews();
+}
 </script>
+<button id="aiFab" class="ai-fab" title="对账小助手">💬</button>
 <button id="backTopBtn" class="back-top" title="回到首页" aria-label="回到首页">⬆</button>
 </body>
 </html>
