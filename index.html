@@ -342,7 +342,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.40';
+const APP_VERSION = 'v2.41';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1934,7 +1934,7 @@ function parseDetailSheet(grid, headerRow, idx){
     // ② 明细表首行数据 → 期初：a) 只有余额列有值（如「2024.2.4 … 63055」）；
     //    b) 名称列为纯数字且无数量单价金额（如「2021.2.1 | 177843」，期初写在名称列）
     if(opening == null && firstDataRow && !qty && !price && amtNum == null && payNum == null && balNum != null){
-      opening = balNum; openingNote = '期初（首行余额）'; firstDataRow = false;
+      opening = balNum; openingNote = dateRaw || name || '期初'; firstDataRow = false;
       continue;
     }
     if(opening == null && firstDataRow && !qty && !price && amtNum == null && payNum == null && balNum == null && name && /^\d+(\.\d+)?$/.test(name)){
@@ -2162,8 +2162,18 @@ async function parseImportXlsx(bytes){
     scan.push(item);
     if(item.d && item.d.opening != null && result.opening == null){ result.opening = item.d.opening; result.openingNote = item.d.openingNote; }
   }
+  // 账期跳过基准年 opYear：期初注释带年份时，标题年份 ≤ opYear 的明细账期表其数据已含在期初中，跳过（防重复计入）
+  // 语义区分：期初为「Y年底/余额」（如「2024年余额」「2024年底」）→ 含 Y 全年 → 跳 ≤ Y；
+  //          期初为「Y年M月」（如「2024.1月」「2024年1月」）→ 只含 Y 年之前的账期 → 跳 < Y（主表年份=Y 保留）
   let opYear = null;
-  if(result.openingNote){ const m = /^(\d{4})年/.exec(result.openingNote); if(m) opYear = parseInt(m[1], 10); }
+  if(result.openingNote){
+    const ym = /(19|20)\d{2}/.exec(result.openingNote);
+    if(ym){
+      const Y = parseInt(ym[0], 10);
+      if(/(20\d{2})[.\-\/年]\s*\d{1,2}\s*月/.test(result.openingNote)) opYear = Y - 1;
+      else opYear = Y;
+    }
+  }
   for(const it of scan){
     // 期初注释带年份时，跳过「标题年份 ≤ 期初年份」的明细账期表（期初已含其全部数据）；总账(summary)不跳过
     if(opYear != null && it.type !== 'summary'){
