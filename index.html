@@ -60,6 +60,15 @@
   body.large-mode .empty-tip { font-size: 15px; }
   .lg-toggle { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 8px 10px; background: #f7f9fc; border: 1px solid #e2e6ec; border-radius: 8px; font-size: 14px; cursor: pointer; }
   .lg-toggle input { width: 18px; height: 18px; }
+  /* 销售统计弹窗 */
+  .stats-modal { width: 94vw; max-width: 660px; }
+  .stats-chart { background: #fff; border: 1px solid #eef0f4; border-radius: 8px; padding: 12px 10px 6px; margin-bottom: 10px; }
+  .stats-title { font-weight: 700; color: #334; margin-bottom: 8px; font-size: 14px; }
+  .stats-bar-bar { transition: opacity .15s; }
+  .stats-bar-bar:hover { opacity: .75; cursor: pointer; }
+  .stats-prod { display: flex; justify-content: space-between; padding: 6px 8px; border-bottom: 1px dashed #eef0f4; font-size: 13px; }
+  .stats-prod b { color: #1f6feb; }
+  .stats-tip { color: #889; font-size: 12px; }
   /* 选名称面板 */
   .name-picker-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-height: 55vh; overflow-y: auto; margin: 10px 0; }
   .name-picker-search { width: 100%; padding: 12px 14px; font-size: 16px; border: 2px solid #d4d9e0; border-radius: 10px; margin: 6px 0 2px; box-sizing: border-box; background: #fff; color: #223; }
@@ -242,6 +251,7 @@
     <button id="importXlsx">📥 导入 Excel (.xlsx)</button>
     <button id="exportXlsx" class="primary">⬇️ 导出 Excel (.xlsx)</button>
     <button id="printBtn">🖨️ 打印</button>
+    <button id="statsBtn">📊 统计</button>
     <button id="checkUpdate">🔄 检查更新</button>
     <button id="resetAll" class="danger">🗑️ 清空全部数据</button>
     <input type="file" id="importFile" accept=".xlsx" style="display:none">
@@ -317,6 +327,18 @@
   </div>
 </div>
 
+<!-- 销售统计弹窗（年/月销售柱状图 + 产品排行，纯本地 SVG 不联网） -->
+<div class="modal-mask" id="statsModal">
+  <div class="modal stats-modal">
+    <div class="ai-chat-head"><span>📊 销售统计</span><button id="statsClose" aria-label="关闭">✕</button></div>
+    <div style="padding:10px 12px;display:flex;gap:10px;flex-wrap:wrap;border-bottom:1px solid #eef1f6">
+      <select id="statsCust" style="flex:1;min-width:130px;padding:8px;border:1px solid #d5d9e2;border-radius:6px;font-size:14px"></select>
+      <select id="statsYear" style="flex:1;min-width:120px;padding:8px;border:1px solid #d5d9e2;border-radius:6px;font-size:14px"></select>
+    </div>
+    <div id="statsBody" style="padding:12px;font-size:13px;color:#334;max-height:64vh;overflow:auto;line-height:1.75"></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 /* ================= 工具函数 ================= */
@@ -333,16 +355,117 @@ function parseDateParts(s){
   if(!m) return null;
   return { y: +m[1], mo: m[2] ? +m[2] : null, d: m[3] ? +m[3] : null };
 }
+/* ================= 销售统计 ================= */
+// 销售额 = 货款合计 − 退货合计（同一范围）；期初/付款不算（往来款）。
+// custs：客户数组（null=全部）；year：null=全部年份，否则只统计该年。
+function salesStats(custs, year){
+  const list = custs || customerList().filter(c => c.partyB);
+  const yMap = new Map(), retMap = new Map(), mMap = new Map();
+  let noDate = 0;
+  for(const c of list){
+    for(const r of c.goods){
+      const amt = rowAmount(r);
+      if(amt == null) continue;
+      const d = parseDateParts(r.date);
+      const y = d ? d.y : null;
+      if(y == null) noDate++;
+      else{
+        if(!yMap.has(y)) yMap.set(y, 0);
+        yMap.set(y, yMap.get(y) + amt);
+        if(year == null || y === year){
+          const mk = y + '-' + (d.mo == null ? 0 : d.mo);
+          if(!mMap.has(mk)) mMap.set(mk, 0);
+          mMap.set(mk, mMap.get(mk) + amt);
+        }
+      }
+    }
+    for(const r of c.returns){
+      const amt = rowAmount(r);
+      if(amt == null) continue;
+      const d = parseDateParts(r.date);
+      const y = d ? d.y : null;
+      if(y != null){
+        if(!retMap.has(y)) retMap.set(y, 0);
+        retMap.set(y, retMap.get(y) + amt);
+      }
+    }
+  }
+  const years = [...yMap.entries()].sort((a, b) => a[0] - b[0]).map(([y, amt]) => ({ y, amt: round2(amt), ret: round2(retMap.get(y) || 0) }));
+  const months = [];
+  if(year != null){
+    for(let mo = 1; mo <= 12; mo++){
+      const amt = mMap.get(year + '-' + mo) || 0;
+      if(amt > 0) months.push({ mo, amt: round2(amt) });
+    }
+    months.sort((a, b) => a.mo - b.mo);
+  }
+  return {
+    years, months,
+    total: round2(years.reduce((s, x) => s + x.amt, 0)),
+    retTotal: round2([...retMap.values()].reduce((s, x) => s + x, 0)),
+    noDate,
+  };
+}
+// 产品排行（按金额降序，前 20）：custs 客户范围；year/mo 可限定（null=不限）
+function salesProducts(custs, year, mo){
+  const list = custs || customerList().filter(c => c.partyB);
+  const map = new Map();
+  for(const c of list){
+    for(const r of c.goods){
+      const amt = rowAmount(r);
+      if(amt == null) continue;
+      const d = parseDateParts(r.date);
+      if(year != null && (!d || d.y !== year)) continue;
+      if(mo != null && (!d || d.mo !== mo)) continue;
+      const name = String(r.name || '').trim() || '(未命名)';
+      const e = map.get(name) || { count: 0, qty: 0, amt: 0 };
+      e.count++;
+      const q = toNum(r.qty); if(q != null) e.qty += q;
+      e.amt += amt;
+      map.set(name, e);
+    }
+  }
+  return [...map.entries()].sort((a, b) => b[1].amt - a[1].amt || b[1].count - a[1].count).slice(0, 20)
+    .map(([name, e]) => ({ name, count: e.count, qty: round2(e.qty), amt: round2(e.amt) }));
+}
+// 手写 SVG 柱状图（不引库不联网）：bars=[{label, value, arg?}]，点击柱调用 onClick(arg 或 label)
+function barChartHTML(bars, onClick){
+  const W = 620, H = 215, padL = 52, padB = 30, padT = 24;
+  const max = Math.max(...bars.map(b => b.value), 1);
+  const n = bars.length || 1;
+  const step = (W - padL - 10) / n;
+  const bw = Math.min(60, step * 0.62);
+  const colors = ['#1f6feb', '#2da44e', '#bf8700', '#b35900', '#8250df'];
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="display:block;font-size:11px">';
+  for(let i = 0; i <= 4; i++){
+    const y = padT + (H - padT - padB) * i / 4;
+    const v = max * (4 - i) / 4;
+    s += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - 8) + '" y2="' + y.toFixed(1) + '" stroke="#eef0f4" stroke-width="1"/>';
+    s += '<text x="' + (padL - 6) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" fill="#99a">' + fmt(v) + '</text>';
+  }
+  bars.forEach((b, i) => {
+    const x = padL + step * i + (step - bw) / 2;
+    const bh = (H - padT - padB) * Math.max(b.value, 0) / max;
+    const y = H - padB - bh;
+    const arg = b.arg != null ? b.arg : b.label;
+    s += '<rect class="stats-bar-bar" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(bh, 0).toFixed(1) + '" rx="3" fill="' + colors[i % colors.length] + '" onclick=\'' + onClick + '(' + JSON.stringify(arg) + ')\'/>';
+    if(bh > 14){
+      s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (y - 4).toFixed(1) + '" text-anchor="middle" fill="#334" font-weight="700">' + fmt(b.value) + '</text>';
+    }
+    s += '<text x="' + (x + bw / 2).toFixed(1) + '" y="' + (H - padB + 14) + '" text-anchor="middle" fill="#667">' + esc(String(b.label)) + '</text>';
+  });
+  s += '</svg>';
+  return s;
+}
 function rowAmount(r){
   const locked = toNum(r.amt); // 导入时锁定的原表金额列值（个别行手填值与数量×单价不一致）
   if(locked != null) return round2(locked);
-  const q = toNum(r.qty), p = toNum(r.price);
-  if(q == null || p == null) return null;
+  const q = toNum(r.qty), p = toNum(r.price);  if(q == null || p == null) return null;
   return round2(q * p);
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.48';
+const APP_VERSION = 'v2.49';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -963,6 +1086,74 @@ function openNamePicker(onPick){
   };
   modal.classList.add('show');
 }
+/* ================= 销售统计弹窗 ================= */
+let __statsMonth = null; // 当前钻取到的月份（null=只看年份/全部）
+function openStats(){
+  const modal = document.getElementById('statsModal');
+  const custSel = document.getElementById('statsCust');
+  const yearSel = document.getElementById('statsYear');
+  custSel.innerHTML = '<option value="">全部客户</option>' + customerList().filter(c => c.partyB)
+    .map(c => '<option value="' + esc(c.id) + '">' + (c.no ? c.no + ' ' : '') + esc(c.partyB) + '</option>').join('');
+  const ys = [...new Set(customerList().flatMap(c => c.goods.map(r => { const d = parseDateParts(r.date); return d ? d.y : null; })))].filter(Boolean).sort((a, b) => b - a);
+  yearSel.innerHTML = '<option value="">全部年份</option>' + ys.map(y => '<option value="' + y + '">' + y + ' 年</option>').join('');
+  __statsMonth = null;
+  modal.classList.add('show');
+  renderStats();
+}
+function statsScope(){
+  const cid = document.getElementById('statsCust').value;
+  return cid ? customerList().filter(c => c.id === cid) : customerList().filter(c => c.partyB);
+}
+function statsSelCust(){ __statsMonth = null; renderStats(); }
+function statsSelYear(){ __statsMonth = null; renderStats(); }
+function statsPickYear(y){
+  document.getElementById('statsYear').value = String(y);
+  __statsMonth = null;
+  renderStats();
+}
+function statsPickMonth(mo){
+  __statsMonth = __statsMonth === mo ? null : mo; // 再点一次取消钻取
+  renderStats();
+}
+function renderStats(){
+  const body = document.getElementById('statsBody');
+  if(!body) return;
+  const cid = document.getElementById('statsCust').value;
+  const year = document.getElementById('statsYear').value ? parseInt(document.getElementById('statsYear').value, 10) : null;
+  const custs = statsScope();
+  const cObj = cid ? customerList().find(c => c.id === cid) : null;
+  const label = cObj ? ('客户「' + customerDisplay(cObj) + '」') : ('全部 ' + custs.length + ' 个客户');
+  const st = salesStats(custs, year);
+  let h = '';
+  h += '<div class="stats-title">' + label + '　年销售额（共 ' + aiMoney(st.total) + ' 元）</div>';
+  h += '<div class="stats-tip" style="margin-bottom:8px">销售额 = 货款合计 − 退货合计。点年份柱子看该年每月，点月份柱子看当月产品（再点一次取消）。</div>';
+  if(st.years.length){
+    h += '<div class="stats-chart">' + barChartHTML(st.years.map(x => ({ label: String(x.y), value: x.amt, arg: x.y })), 'statsPickYear') + '</div>';
+    if(st.retTotal > 0) h += '<div class="stats-tip">全部年份退货合计 ' + aiMoney(st.retTotal) + ' 元（已从销售额扣除）。</div>';
+    if(st.noDate) h += '<div class="stats-tip">有 ' + st.noDate + ' 笔货款没有日期，未计入年份统计。</div>';
+  } else {
+    h += '<div class="stats-tip">还没有货款记录，统计不出来。</div>';
+  }
+  if(year != null){
+    h += '<div class="stats-title">' + year + ' 年每月销售额</div>';
+    if(st.months.length){
+      h += '<div class="stats-chart">' + barChartHTML(st.months.map(x => ({ label: x.mo + '月', value: x.amt, arg: x.mo })), 'statsPickMonth') + '</div>';
+      const yr = st.years.find(x => x.y === year);
+      if(yr && yr.ret > 0) h += '<div class="stats-tip">' + year + ' 年退货合计 ' + aiMoney(yr.ret) + ' 元（已从销售额扣除）。</div>';
+    } else {
+      h += '<div class="stats-tip">该年没有货款记录。</div>';
+    }
+  }
+  const prods = (__statsMonth != null && year != null) ? salesProducts(custs, year, __statsMonth) : salesProducts(custs, year, null);
+  const pLabel = (__statsMonth != null && year != null) ? (year + ' 年 ' + __statsMonth + ' 月') : (year != null ? year + ' 年' : '全部年份');
+  h += '<div class="stats-title">' + pLabel + ' 产品排行（按金额从高到低，前 20）</div>';
+  if(prods.length){
+    h += '<div>' + prods.map(p => '<div class="stats-prod"><span>' + esc(p.name) + '　×' + p.count + ' 次，数量 ' + aiMoney(p.qty) + '</span><b>' + aiMoney(p.amt) + ' 元</b></div>').join('') + '</div>';
+  } else {
+    h += '<div class="stats-tip">该范围没有产品记录。</div>';
+  }
+  body.innerHTML = h;
+}
 function focusLastRow(tableEl){
   if(!tableEl) return;
   const inputs = tableEl.querySelectorAll('tbody tr:last-child input');
@@ -1463,7 +1654,7 @@ function setup(){
     };
     document.getElementById('aiChatSend').addEventListener('click', sendAI);
     document.getElementById('aiChatInput').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); sendAI(); } });
-    const chips = ['房正伟的余额','所有客户合计','产品统计','怎么导出 Excel','新建客户 张三','切到 05','大字模式'];
+    const chips = ['房正伟的余额','所有客户合计','2024年卖了多少钱','产品统计','怎么导出 Excel','新建客户 张三','切到 05','大字模式'];
     const chipBox = document.getElementById('aiChatChips');
     if(chipBox){
       for(const c of chips){
@@ -1552,6 +1743,12 @@ function setup(){
   document.getElementById('pasteReturns').addEventListener('click', () => openPaste('returns'));
   document.getElementById('pasteCancel').addEventListener('click', () => pasteModal.classList.remove('show'));
   pasteModal.addEventListener('click', e => { if(e.target === pasteModal) pasteModal.classList.remove('show'); });
+  const statsModal = document.getElementById('statsModal');
+  document.getElementById('statsBtn').addEventListener('click', openStats);
+  document.getElementById('statsClose').addEventListener('click', () => statsModal.classList.remove('show'));
+  statsModal.addEventListener('click', e => { if(e.target === statsModal) statsModal.classList.remove('show'); });
+  document.getElementById('statsCust').addEventListener('change', statsSelCust);
+  document.getElementById('statsYear').addEventListener('change', statsSelYear);
   document.getElementById('pasteOk').addEventListener('click', () => {
     const lines = pasteText.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     let added = 0;
@@ -2813,7 +3010,8 @@ function aiNorm(s){ return String(s == null ? '' : s).toLowerCase().replace(/[\s
 /* 在输入里找客户：先按编号（05/5号/第5个），再按名字包含 */
 function aiCustOf(t){
   const list = customerList();
-  const mm = t.match(/(?:^|\D)(0?\d{1,2})(?:号|个)?(?:\D|$)/);
+  // 编号匹配：数字后面跟「月/年/日/小数点」时是日期不是编号（如「2024年3月」里的 3）
+  const mm = t.match(/(?:^|\D)(0?\d{1,2})(?:号|个)?(?!\s*月|\s*年|\s*日|\d|\.|\/)(?:\D|$)/);
   if(mm){ const no = mm[1].padStart(2, '0'); const c = list.find(x => x.no === no); if(c) return c; }
   for(const c of list){
     const n = aiNorm(c.partyB);
@@ -2919,6 +3117,37 @@ function aiHandle(raw){
     const c2 = aiCustOf(t);
     if(c2 && c2.id !== db.current){ selectCustomer(c2.id); return aiSay('已切换到客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。'); }
     if(c2) return aiSay('现在就是客户「' + customerDisplay(c2) + '」（编号 ' + c2.no + '）。');
+  }
+  /* 销售统计问答：X 年卖了多少钱 / 卖得最好的月份 / 总营业额（本地计算） */
+  const sellQ = /卖了多少钱|卖了多少|营业额|销售额|销售统计|年卖了|卖得最好|卖得最多|卖得好|年度统计|月度统计/.test(t);
+  if(sellQ){
+    const yearMatch = t.match(/(19|20)\d{2}/);
+    const moMatch = t.match(/(\d{1,2})\s*月/);
+    const one = aiCustOf(t);
+    const scopeC = one ? [one] : customerList().filter(c => c.partyB);
+    const scopeLabel = one ? ('客户「' + customerDisplay(one) + '」') : ('全部 ' + scopeC.length + ' 个客户');
+    const st = salesStats(scopeC, yearMatch ? parseInt(yearMatch[0], 10) : null);
+    if(yearMatch){
+      const y = parseInt(yearMatch[0], 10);
+      const yb = st.years.find(x => x.y === y);
+      if(!yb) return aiSay('【销售统计】' + scopeLabel + '：' + y + ' 年没有货款记录。');
+      if(moMatch){
+        const mo = parseInt(moMatch[1], 10);
+        const mb = st.months.find(x => x.mo === mo);
+        if(!mb) return aiSay('【销售统计】' + scopeLabel + '：' + y + ' 年 ' + mo + ' 月没有货款记录。');
+        return aiSay('【销售统计】' + scopeLabel + '：' + y + ' 年 ' + mo + ' 月销售额 ' + aiMoney(mb.amt) + ' 元。');
+      }
+      let msg = '【销售统计】' + scopeLabel + '：' + y + ' 年销售额 ' + aiMoney(yb.amt) + ' 元';
+      if(yb.ret > 0) msg += '（已扣除退货 ' + aiMoney(yb.ret) + ' 元）';
+      if(st.months.length){ const best = st.months.reduce((a, b) => b.amt > a.amt ? b : a); msg += '，卖得最好的月份：' + best.mo + ' 月 ' + aiMoney(best.amt) + ' 元'; }
+      return aiSay(msg + '。');
+    }
+    if(!st.years.length) return aiSay('【销售统计】' + scopeLabel + '：还没有货款记录。');
+    let msg = '【销售统计】' + scopeLabel + '：总共卖了 ' + aiMoney(st.total) + ' 元';
+    if(st.retTotal > 0) msg += '（退货 ' + aiMoney(st.retTotal) + ' 元已扣除）';
+    if(st.years.length){ const best = st.years.reduce((a, b) => b.amt > a.amt ? b : a); msg += '，卖得最好的年份：' + best.y + ' 年 ' + aiMoney(best.amt) + ' 元'; }
+    if(st.months.length){ const bestm = st.months.reduce((a, b) => b.amt > a.amt ? b : a); msg += '；卖得最好的月份：' + bestm.mo + ' 月 ' + aiMoney(bestm.amt) + ' 元'; }
+    return aiSay(msg + '。');
   }
   /* 产品统计：统计账单里的产品名/出现次数/数量/金额（默认所有客户；提到某客户只统计该客户） */
   const prodQ = /产品|品名/.test(t) || (/统计/.test(t) && /名称|名字|品名/.test(t));
