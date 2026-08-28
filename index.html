@@ -496,7 +496,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.63';
+const APP_VERSION = 'v2.64';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -3425,7 +3425,9 @@ function aiHandle(raw){
   const all = /所有|全部|每个|每一|总共|一共|总计|合计所有/.test(t);
   const listQ = /几个客户|客户列表|有哪些客户|多少客户|客户名单/.test(t);
   // 「别人欠我们多少」类：问欠款总额（须含 总共/一共/全部/所有/别人/他们/合计 等范围词，避免截胡「房正伟欠多少」的单客户查询）
-  const wantOwe = /欠/.test(t) && /总共|一共|全部|所有|别人|他们|合计|汇总|总数/.test(t);
+  // 扩展：「谁欠他的钱最多」「欠钱最多的是谁」等（含 谁/哪/最/排行 等疑问排行词且未指名客户）也走全客户欠款排序
+  const namedCust = aiCustOf(t); // 是否点名了某客户（点名则走下方单客户查询，不做全客户欠款）
+  const wantOwe = /欠/.test(t) && !namedCust && (/总共|一共|全部|所有|别人|他们|合计|汇总|总数|谁|哪|最|排行|排名|第|几/.test(t));
   if(all || /合计|汇总|总数/.test(t) || wantOwe){
     const lines = [];
     let to = 0, tg = 0, tp = 0, tr = 0, tc = 0, owe = 0, oweN = 0, over = 0, overN = 0;
