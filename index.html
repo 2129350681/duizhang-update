@@ -46,10 +46,10 @@
   /* 大字模式（老年友好）：放大全局字体与按钮 */
   body.large-mode table.editor { font-size: 16px; }
   body.large-mode table.editor th { font-size: 15px; padding: 10px 8px; }
-  body.large-mode table.editor input { font-size: 17px; padding: 11px 8px; min-width: 92px; }
+  body.large-mode table.editor input { font-size: 17px; padding: 11px 8px; min-width: 0; }
   /* 日期列加宽（大字模式 17px 字号下 2025.11.2 约 100px 宽，保证不用横向拖动就能看全） */
-  table.editor th:first-child, table.editor td:first-child { min-width: 92px; }
-  body.large-mode table.editor th:first-child, body.large-mode table.editor td:first-child { min-width: 112px; }
+  table.editor th:first-child, table.editor td:first-child { min-width: 0; }
+  body.large-mode table.editor th:first-child, body.large-mode table.editor td:first-child { min-width: 0; }
   body.large-mode button { font-size: 16px; padding: 12px 18px; }
   body.large-mode .tabs button { font-size: 16px; padding: 13px 20px; }
   body.large-mode .customer-bar button { font-size: 15px; padding: 11px 14px; }
@@ -85,13 +85,38 @@
   .name-picker-grid button:hover { border-color: #1f6feb; background: #f2f7ff; }
   .name-picker-grid .np-price { display: block; font-size: 12px; color: #889; margin-top: 2px; }
   .name-picker-empty { text-align: center; color: #889; padding: 20px 0; font-size: 14px; }
-  table.editor { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.editor th { background: #f2f5f9; padding: 8px 6px; text-align: left; border-bottom: 1px solid #d4d9e0; white-space: nowrap; font-weight: 600; }
+  table.editor { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  table.editor th { background: #f2f5f9; padding: 8px 6px; text-align: left; border-bottom: 1px solid #d4d9e0; white-space: normal; word-break: break-all; font-weight: 600; }
   table.editor td { border-bottom: 1px solid #eef1f5; padding: 3px 4px; }
-  table.editor input { width: 100%; min-width: 70px; padding: 7px 8px; border: 1px solid transparent; border-radius: 5px; font-size: 13px; background: transparent; }
+  table.editor input { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid transparent; border-radius: 5px; font-size: 13px; background: transparent; box-sizing: border-box; }
   table.editor input:hover { border-color: #c9d2dd; background: #fbfcfe; }
   table.editor input:focus { outline: none; border-color: #1f6feb; background: #fff; }
   table.editor input.num { text-align: right; }
+  /* 窄屏（手机）：低频列自动隐藏 + 关键列加宽，保证一屏看全不横向滑动（数据仍在，导出/打印/预览完整保留）
+     只对货款表隐藏 单位/发货单号/备注（10 列最多）；付款/退货表列少，保留备注等全部列 */
+  @media (max-width: 560px){
+    #goodsEditor th[data-col="unit"], #goodsEditor td[data-col="unit"],
+    #goodsEditor th[data-col="waybill"], #goodsEditor td[data-col="waybill"],
+    #goodsEditor th[data-col="note"], #goodsEditor td[data-col="note"] { display: none; }
+    table.pv th[data-col="waybill"], table.pv td[data-col="waybill"],
+    table.pv th[data-col="note"], table.pv td[data-col="note"] { display: none; }
+    /* 窄屏下列宽按剩余可分配空间重排（覆盖 inline 百分比）：日期/数字列加宽，删除列给足按钮宽度 */
+    #goodsEditor th[data-col="date"], #goodsEditor td[data-col="date"] { width: 26% !important; }
+    #goodsEditor th[data-col="qty"], #goodsEditor td[data-col="qty"] { width: 9% !important; }
+    #goodsEditor th[data-col="price"], #goodsEditor td[data-col="price"] { width: 13% !important; }
+    #goodsEditor th[data-col="amount"], #goodsEditor td[data-col="amount"] { width: 14% !important; }
+    #goodsEditor th[data-col="balance"], #goodsEditor td[data-col="balance"] { width: 14% !important; }
+    #goodsEditor th[data-col="del"], #goodsEditor td[data-col="del"] { width: 30px !important; }
+    /* 列宽已按窄屏重排，容器禁止横向滚动（多余边界是输入框内部溢出，不裁内容） */
+    .table-wrap { overflow-x: hidden; }
+    /* 大字模式窄屏：17px 字号日期更长，日期列再放宽 */
+    body.large-mode #goodsEditor th[data-col="date"], body.large-mode #goodsEditor td[data-col="date"] { width: 30% !important; }
+    body.large-mode #goodsEditor th[data-col="qty"], body.large-mode #goodsEditor td[data-col="qty"] { width: 9% !important; }
+    body.large-mode #goodsEditor th[data-col="price"], body.large-mode #goodsEditor td[data-col="price"] { width: 13% !important; }
+    body.large-mode #goodsEditor th[data-col="amount"], body.large-mode #goodsEditor td[data-col="amount"] { width: 13% !important; }
+    body.large-mode #goodsEditor th[data-col="balance"], body.large-mode #goodsEditor td[data-col="balance"] { width: 13% !important; }
+    body.large-mode #goodsEditor th[data-col="del"], body.large-mode #goodsEditor td[data-col="del"] { width: 30px !important; }
+  }
   .amount-cell { text-align: right; padding: 7px 8px; color: #1a5fd0; font-variant-numeric: tabular-nums; }
   .del-btn { color: #c0392b; background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 5px; }
   .del-btn:hover { background: #fdf0ee; }
@@ -100,9 +125,9 @@
   .preview h3:first-child { margin-top: 4px; }
   .preview .sheet-title { text-align: center; font-size: 16px; font-weight: 700; padding: 10px 0 2px; }
   .preview .sheet-sub { text-align: center; font-size: 12px; color: #667; padding-bottom: 8px; }
-  table.pv { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; }
-  table.pv th { background: #f2f5f9; border: 1px solid #aab4c0; padding: 6px 8px; font-weight: 600; text-align: center; }
-  table.pv td { border: 1px solid #aab4c0; padding: 5px 8px; }
+  table.pv { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 14px; table-layout: fixed; }
+  table.pv th { background: #f2f5f9; border: 1px solid #aab4c0; padding: 6px 8px; font-weight: 600; text-align: center; white-space: normal; word-break: break-all; }
+  table.pv td { border: 1px solid #aab4c0; padding: 5px 8px; word-break: break-all; }
   table.pv td.num, table.pv th.num { text-align: right; font-variant-numeric: tabular-nums; }
   table.pv tr.subtotal td { font-weight: 700; background: #f7f9fc; }
   table.pv tr.year-total td { font-weight: 700; background: #fdeee0; }
@@ -499,7 +524,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.65';
+const APP_VERSION = 'v2.66';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1418,11 +1443,11 @@ function balanceByIdMap(){
 
 /* ================= 编辑表格渲染 ================= */
 const G_FIELDS = [
-  { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
+  { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'13%' },
   { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
-  { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
-  { key:'qty', label:'数量', ph:'0', cls:'num' },
-  { key:'price', label:'单价', ph:'0.00', cls:'num' },
+  { key:'unit', label:'单位', ph:'付', cls:'', w:'6%' },
+  { key:'qty', label:'数量', ph:'0', cls:'num', w:'8%' },
+  { key:'price', label:'单价', ph:'0.00', cls:'num', w:'12%' },
   { key:'waybill', label:'发货单号', ph:'选填', cls:'' },
   { key:'note', label:'备注', ph:'如：余量16付', cls:'' },
 ];
@@ -1455,27 +1480,27 @@ function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   if(balanceMap) tableEl.__balanceMap = balanceMap; // 删除行后重渲染沿用
   const bm = tableEl.__balanceMap;
   let html = '<thead><tr>';
-  fields.forEach(f => html += `<th style="${f.w?'width:'+f.w+';':''}">${f.label}</th>`);
-  if(amountKey) html += '<th style="width:90px">金额</th>';
-  if(bm) html += '<th style="width:90px">余额</th>';
-  html += '<th style="width:44px"></th></tr></thead><tbody>';
+  fields.forEach(f => html += `<th data-col="${f.key}" style="${f.w?'width:'+f.w+';':''}">${f.label}</th>`);
+  if(amountKey) html += '<th data-col="amount" style="width:13%">金额</th>';
+  if(bm) html += '<th data-col="balance" style="width:13%">余额</th>';
+  html += '<th data-col="del" style="width:8%"></th></tr></thead><tbody>';
   if(!rows.length){
     html += `<tr><td colspan="${fields.length + (amountKey?2:1) + (bm?1:0)}"><div class="empty-tip">还没有数据，点上方「添加一行」或「批量粘贴」开始录入</div></td></tr>`;
   }
   rows.forEach(r => {
     html += '<tr>';
     fields.forEach(f => {
-      html += `<td><input data-id="${r.id}" data-field="${f.key}" class="${f.cls}" value="${esc(r[f.key])}" placeholder="${f.ph}"${f.cls && f.cls.indexOf('num') >= 0 ? ' inputmode="decimal"' : ''}></td>`;
+      html += `<td data-col="${f.key}"><input data-id="${r.id}" data-field="${f.key}" class="${f.cls}" value="${esc(r[f.key])}" placeholder="${f.ph}"${f.cls && f.cls.indexOf('num') >= 0 ? ' inputmode="decimal"' : ''}></td>`;
     });
     if(amountKey){
       const a = amountKey === 'amount' ? rowAmount(r) : toNum(r[amountKey]);
-      html += `<td class="amount-cell" data-amount="${r.id}">${a == null ? '—' : fmt(a)}</td>`;
+      html += `<td class="amount-cell" data-col="amount" data-amount="${r.id}">${a == null ? '—' : fmt(a)}</td>`;
     }
     if(bm){
       const b = bm.get(r.id);
-      html += `<td class="amount-cell" data-balance="${r.id}">${b == null ? '—' : fmt(b)}</td>`;
+      html += `<td class="amount-cell" data-col="balance" data-balance="${r.id}">${b == null ? '—' : fmt(b)}</td>`;
     }
-    html += `<td><button class="del-btn" data-del="${r.id}" title="删除">✕</button></td></tr>`;
+    html += `<td data-col="del"><button class="del-btn" data-del="${r.id}" title="删除">✕</button></td></tr>`;
   });
   html += '</tbody>';
   tableEl.innerHTML = html;
@@ -1515,10 +1540,11 @@ function bindEditor(tableEl, rows, amountKey, onChange){
     }
     onChange && onChange();
   }
-  // Android WebView 软键盘输入时 input 事件偶尔不派发，用 change/focusout 兜底（重复触发仅重写相同值，无害）
+  // Android WebView 软键盘输入时 input 事件偶尔不派发，用 change/focusout/keyup 兜底（重复触发仅重写相同值，无害）
   tableEl.addEventListener('input', handleFieldInput);
   tableEl.addEventListener('change', handleFieldInput);
   tableEl.addEventListener('focusout', handleFieldInput);
+  tableEl.addEventListener('keyup', handleFieldInput);
   tableEl.addEventListener('click', e => {
     const btn = e.target.closest('[data-del]');
     if(!btn) return;
@@ -1539,7 +1565,7 @@ function goodsSheetHTML(groups, yearTotalList, title, sub, balMap){
   const cols = 10; // 日期 名称 单位 数量 单价 金额 余额 小计 发货单号 备注
   let h = `<div class="sheet-title">${esc(title)}</div>`;
   if(sub) h += `<div class="sheet-sub">${esc(sub)}</div>`;
-  h += '<table class="pv"><thead><tr><th>日期</th><th>名称及规格</th><th>单位</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th class="num">余额</th><th class="num">小计</th><th>发货单号</th><th>备注</th></tr></thead><tbody>';
+  h += '<table class="pv"><thead><tr><th data-col="date">日期</th><th data-col="name">名称及规格</th><th data-col="unit">单位</th><th class="num" data-col="qty">数量</th><th class="num" data-col="price">单价</th><th class="num" data-col="amount">金额</th><th class="num" data-col="balance">余额</th><th class="num" data-col="subtotal">小计</th><th data-col="waybill">发货单号</th><th data-col="note">备注</th></tr></thead><tbody>';
   for(const g of groups){
     let monthSum = 0;
     let last = ''; // 生成表格时日期继承：没填日期的行默认同前一天（数据本身不改，仍留给人填）
@@ -1552,14 +1578,14 @@ function goodsSheetHTML(groups, yearTotalList, title, sub, balMap){
       const y = parseDateParts(last);
       const dateTxt = y ? `${y.y}.${y.mo || ''}${y.d ? '.' + y.d : ''}` : (d || last);
       const bal = balMap ? balMap.get(r.id) : null;
-      h += `<tr><td>${esc(dateTxt)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td><td class="num">${esc(r.qty)}</td><td class="num">${esc(r.price)}</td><td class="num">${isSum ? fmt(a) : ''}</td><td class="num">${bal == null ? '' : fmt(bal)}</td><td class="num"></td><td>${esc(r.waybill)}</td><td>${esc(r.note)}</td></tr>`;
+      h += `<tr><td data-col="date">${esc(dateTxt)}</td><td data-col="name">${esc(r.name)}</td><td data-col="unit">${esc(r.unit)}</td><td class="num" data-col="qty">${esc(r.qty)}</td><td class="num" data-col="price">${esc(r.price)}</td><td class="num" data-col="amount">${isSum ? fmt(a) : ''}</td><td class="num" data-col="balance">${bal == null ? '' : fmt(bal)}</td><td class="num" data-col="subtotal"></td><td data-col="waybill">${esc(r.waybill)}</td><td data-col="note">${esc(r.note)}</td></tr>`;
     }
     if(g.key != null && g.key % 100 !== 0){
-      h += `<tr class="subtotal"><td colspan="5"></td><td>${g.label}小计</td><td></td><td class="num">${fmt(monthSum)}</td><td colspan="2"></td></tr>`;
+      h += `<tr class="subtotal"><td data-col="date"></td><td data-col="name"></td><td data-col="unit"></td><td class="num" data-col="qty"></td><td class="num" data-col="price"></td><td data-col="amount">${g.label}小计</td><td class="num" data-col="balance"></td><td class="num" data-col="subtotal">${fmt(monthSum)}</td><td data-col="waybill"></td><td data-col="note"></td></tr>`;
     }
   }
   for(const yt of yearTotalList){
-    h += `<tr class="year-total"><td>${yt.year}年货款</td><td>总计</td><td colspan="3"></td><td></td><td></td><td class="num">${fmt(yt.total)}</td><td colspan="2"></td></tr>`;
+    h += `<tr class="year-total"><td data-col="date">${yt.year}年货款</td><td data-col="name">总计</td><td data-col="unit"></td><td class="num" data-col="qty"></td><td class="num" data-col="price"></td><td data-col="amount"></td><td class="num" data-col="balance"></td><td class="num" data-col="subtotal">${fmt(yt.total)}</td><td data-col="waybill"></td><td data-col="note"></td></tr>`;
   }
   h += '</tbody></table>';
   return h;
@@ -1589,16 +1615,16 @@ function renderPaymentsPreview(){
   const rows = sortByDate(state.payments);
   const el = document.getElementById('paymentsPreview');
   if(!rows.length){ updatePreviewArea('', el); return; }
-  let h = `<div class="sheet-title">${esc(state.partyB)}付给${esc(state.partyA)}的货款</div><table class="pv"><thead><tr><th>日期</th><th class="num">付款</th><th>备注</th><th class="num">累计付款</th></tr></thead><tbody>`;
+  let h = `<div class="sheet-title">${esc(state.partyB)}付给${esc(state.partyA)}的货款</div><table class="pv"><thead><tr><th data-col="date">日期</th><th class="num" data-col="amount">付款</th><th data-col="note">备注</th><th class="num" data-col="cum">累计付款</th></tr></thead><tbody>`;
   let cum = 0;
   let last = ''; // 日期继承：空日期显示上一非空日期（数据不改）
   rows.forEach(r => {
     const a = toNum(r.amount); if(a != null) cum = round2(cum + a);
     const d = String(r.date || '').trim();
     if(d) last = d;
-    h += `<tr><td>${esc(d || last)}</td><td class="num">${a == null ? '' : fmt(a)}</td><td>${esc(r.note)}</td><td class="num">${fmt(cum)}</td></tr>`;
+    h += `<tr><td data-col="date">${esc(d || last)}</td><td class="num" data-col="amount">${a == null ? '' : fmt(a)}</td><td data-col="note">${esc(r.note)}</td><td class="num" data-col="cum">${fmt(cum)}</td></tr>`;
   });
-  h += `<tr class="year-total"><td>总计付款</td><td class="num">${fmt(cum)}</td><td></td><td></td></tr></tbody></table>`;
+  h += `<tr class="year-total"><td data-col="date">总计付款</td><td class="num" data-col="amount">${fmt(cum)}</td><td data-col="note"></td><td data-col="cum"></td></tr></tbody></table>`;
   el.innerHTML = h;
 }
 
@@ -1607,15 +1633,15 @@ function renderReturnsPreview(){
   const rows = sortByDate(state.returns);
   const el = document.getElementById('returnsPreview');
   if(!rows.length){ updatePreviewArea('', el); return; }
-  let h = `<div class="sheet-title">${esc(state.partyB)}退给${esc(state.partyA)}的货</div><table class="pv"><thead><tr><th>日期</th><th>名称及规格</th><th>单位</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th>备注</th></tr></thead><tbody>`;
+  let h = `<div class="sheet-title">${esc(state.partyB)}退给${esc(state.partyA)}的货</div><table class="pv"><thead><tr><th data-col="date">日期</th><th data-col="name">名称及规格</th><th data-col="unit">单位</th><th class="num" data-col="qty">数量</th><th class="num" data-col="price">单价</th><th class="num" data-col="amount">金额</th><th data-col="note">备注</th></tr></thead><tbody>`;
   let last = ''; // 日期继承：空日期显示上一非空日期（数据不改）
   rows.forEach(r => {
     const a = rowAmount(r);
     const d = String(r.date || '').trim();
     if(d) last = d;
-    h += `<tr><td>${esc(d || last)}</td><td>${esc(r.name)}</td><td>${esc(r.unit)}</td><td class="num">${esc(r.qty)}</td><td class="num">${esc(r.price)}</td><td class="num">${a == null ? '' : fmt(a)}</td><td>${esc(r.note)}</td></tr>`;
+    h += `<tr><td data-col="date">${esc(d || last)}</td><td data-col="name">${esc(r.name)}</td><td data-col="unit">${esc(r.unit)}</td><td class="num" data-col="qty">${esc(r.qty)}</td><td class="num" data-col="price">${esc(r.price)}</td><td class="num" data-col="amount">${a == null ? '' : fmt(a)}</td><td data-col="note">${esc(r.note)}</td></tr>`;
   });
-  h += `<tr class="year-total"><td>退货共计</td><td colspan="4"></td><td class="num">${fmt(totalAll(rows))}</td><td></td></tr></tbody></table>`;
+  h += `<tr class="year-total"><td data-col="date">退货共计</td><td data-col="name"></td><td data-col="unit"></td><td class="num" data-col="qty"></td><td class="num" data-col="price"></td><td class="num" data-col="amount">${fmt(totalAll(rows))}</td><td data-col="note"></td></tr></tbody></table>`;
   el.innerHTML = h;
 }
 
@@ -1741,38 +1767,40 @@ function setup(){
   goodsEditor.__fields = G_FIELDS; goodsEditor.__amountKey = 'amount';
   const renderGoodsEditor = () => renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor, balanceByIdMap());
   // 明细与总账联动：明细任何变化（输入/增行/清空）都同步刷新总账，防止「付款录进去总账不显示」
-  const refreshGoodsAll = () => { renderGoodsPreview(); renderSummaryPreview(); };
+  // 刷新前强制先 syncEditorFromDom：Android 软键盘 input 事件偶尔不派发，state 可能落后于 DOM，
+  // 不先同步就会看到「表格有、预览/总账没有」的延迟假象
+  const refreshGoodsAll = () => { syncEditorFromDom(state.goods, goodsEditor); renderGoodsPreview(); renderSummaryPreview(); };
   bindEditor(goodsEditor, state.goods, 'amount', refreshGoodsAll);
   document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); sortByDate(state.goods); save(); renderGoodsEditor(); refreshGoodsAll(); focusLastRow(document.getElementById('goodsEditor')); });
   document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); refreshGoodsAll(); } });
 
   // 付款
   const P_FIELDS = [
-    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'92px' },
-    { key:'amount', label:'付款金额', ph:'0.00', cls:'num' },
+    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'30%' },
+    { key:'amount', label:'付款金额', ph:'0.00', cls:'num', w:'26%' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
   const paymentsEditor = document.getElementById('paymentsEditor');
   paymentsEditor.__fields = P_FIELDS; paymentsEditor.__amountKey = 'amount';
   const renderPaymentsEditor = () => renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
-  const refreshPaymentsAll = () => { renderPaymentsPreview(); renderSummaryPreview(); };
+  const refreshPaymentsAll = () => { syncEditorFromDom(state.payments, paymentsEditor); renderPaymentsPreview(); renderSummaryPreview(); };
   bindEditor(paymentsEditor, state.payments, 'amount', refreshPaymentsAll);
   document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); sortByDate(state.payments); save(); renderPaymentsEditor(); refreshPaymentsAll(); focusLastRow(document.getElementById('paymentsEditor')); });
   document.getElementById('clearPayments').addEventListener('click', () => { if(confirm('确定清空所有付款记录？')){ state.payments = []; save(); renderPaymentsEditor(); refreshPaymentsAll(); } });
 
   // 退货
   const R_FIELDS = [
-    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
+    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'13%' },
     { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
-    { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
-    { key:'qty', label:'数量', ph:'0', cls:'num' },
-    { key:'price', label:'单价', ph:'0.00', cls:'num' },
+    { key:'unit', label:'单位', ph:'付', cls:'', w:'6%' },
+    { key:'qty', label:'数量', ph:'0', cls:'num', w:'8%' },
+    { key:'price', label:'单价', ph:'0.00', cls:'num', w:'12%' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
   const returnsEditor = document.getElementById('returnsEditor');
   returnsEditor.__fields = R_FIELDS; returnsEditor.__amountKey = 'amount';
   const renderReturnsEditor = () => renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
-  const refreshReturnsAll = () => { renderReturnsPreview(); renderSummaryPreview(); };
+  const refreshReturnsAll = () => { syncEditorFromDom(state.returns, returnsEditor); renderReturnsPreview(); renderSummaryPreview(); };
   bindEditor(returnsEditor, state.returns, 'amount', refreshReturnsAll);
   document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); sortByDate(state.returns); save(); renderReturnsEditor(); refreshReturnsAll(); focusLastRow(document.getElementById('returnsEditor')); });
   document.getElementById('clearReturns').addEventListener('click', () => { if(confirm('确定清空所有退货记录？')){ state.returns = []; save(); renderReturnsEditor(); refreshReturnsAll(); } });
@@ -3226,16 +3254,16 @@ window.__duizhangImportTest = async function(b64, mode){
   const stats = mergeImport(parsed, mode || 'append');
   save();
   const FIELDS_P = [
-    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'92px' },
-    { key:'amount', label:'付款金额', ph:'0.00', cls:'num' },
+    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'30%' },
+    { key:'amount', label:'付款金额', ph:'0.00', cls:'num', w:'26%' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
   const FIELDS_R = [
-    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
+    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'13%' },
     { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
-    { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
-    { key:'qty', label:'数量', ph:'0', cls:'num' },
-    { key:'price', label:'单价', ph:'0.00', cls:'num' },
+    { key:'unit', label:'单位', ph:'付', cls:'', w:'6%' },
+    { key:'qty', label:'数量', ph:'0', cls:'num', w:'8%' },
+    { key:'price', label:'单价', ph:'0.00', cls:'num', w:'12%' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
   renderEditor(state.goods, G_FIELDS, 'amount', document.getElementById('goodsEditor'), balanceByIdMap());

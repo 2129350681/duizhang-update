@@ -1,7 +1,7 @@
 {
-    "version":  "2.65",
-    "versionCode":  71,
-    "notes":  "",
-    "apk":  "duizhang-2.65.apk",
-    "htmlSha256":  "2de81b5709eb535cf862fe92bebe09a86d05a12ec5a4f1acfef911e8ad096d0b"
+    "version":  "2.66",
+    "versionCode":  72,
+    "notes":  "①手机上一屏看全不用左右滑动：货款表格在手机上自动隐藏 单位/发货单号/备注 三列（数据还在，导出/打印/预览完整保留），日期、数量、单价、金额、余额列自动加宽，日期一眼看全 ②电脑上仍是完整 10 列 ③明细录入后预览/总账即时同步（解决过一会才显示的问题）",
+    "apk":  "duizhang-2.66.apk",
+    "htmlSha256":  "4a19694989811f9ef2e87480ecef1f9b03d5fdb74c5a08499de35ca4f8b27ec7"
 }
