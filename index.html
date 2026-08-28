@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.60';
+const APP_VERSION = 'v2.61';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2381,6 +2381,7 @@ function parseSummarySheet(grid, headerRow, idx){
   let totalGoods = null, totalPay = null, totalRet = null, receivable = null; // 汇总型总账的总计行
   let nameCol = idx.name;
   if(nameCol == null && idx.date != null) nameCol = idx.date + 1; // 总账名称列无表头名
+  let firstDataRow = true;
   for(let r = start; r < grid.length; r++){
     const row = grid[r];
     const g = (i) => (i == null || row[i] == null) ? '' : String(row[i]).trim();
@@ -2392,6 +2393,27 @@ function parseSummarySheet(grid, headerRow, idx){
     const payRaw = g(idx.pay), payNum = toNum(payRaw);
     const balRaw = g(idx.balance), balNum = toNum(balRaw);
     const note = g(idx.note);
+    // ①.5 汇总型总账的总计行（「累计总货款/总付款/总退货/应收余额」写在日期列；值在各计数列）
+    //    这些行不是逐笔明细，绝不能当付款/退货/期初计入（否则与明细表双重计入）。
+    //    必须先于 ① 期初判断：「应收余额」含「余额」字样，若先走期初分支会被误当本期初
+    //    （程序自导出文件的总账含这些行，重新导入时曾把「应收余额 1054148.6」当期初）
+    const label = name || dateRaw;
+    if(/累计总货款|总货款|总金额/.test(label)){
+      totalGoods = amtNum != null ? amtNum : (balNum != null ? balNum : totalGoods);
+      if(balNum != null) ending = balNum; firstDataRow = false; continue;
+    }
+    if(/总付款/.test(label)){
+      totalPay = payNum != null ? payNum : (amtNum != null ? amtNum : totalPay);
+      if(balNum != null) ending = balNum; firstDataRow = false; continue;
+    }
+    if(/总退货/.test(label)){
+      totalRet = amtNum != null ? amtNum : (payNum != null ? payNum : totalRet);
+      if(balNum != null) ending = balNum; firstDataRow = false; continue;
+    }
+    if(/应收余额/.test(label)){
+      receivable = balNum != null ? balNum : (amtNum != null ? amtNum : receivable);
+      if(balNum != null) ending = balNum; firstDataRow = false; continue;
+    }
     // ① 期初（余额字样，值取余额列或行内最后一个数字）
     if(/余额|结余|上年|年底|年初/.test(name + '|' + dateRaw + '|' + note)){
       let pv = balNum;
@@ -2402,27 +2424,16 @@ function parseSummarySheet(grid, headerRow, idx){
         }
       }
       if(pv != null && opening == null){ opening = pv; openingNote = name || dateRaw || note || '期初'; }
+      firstDataRow = false;
       continue;
     }
-    // ①.5 汇总型总账的总计行（「累计总货款/总付款/总退货/应收余额」写在日期列；值在各计数列）
-    //    这些行不是逐笔明细，绝不能当付款/退货计入（否则与明细表双重计入）
-    const label = name || dateRaw;
-    if(/累计总货款|总货款|总金额/.test(label)){
-      totalGoods = amtNum != null ? amtNum : (balNum != null ? balNum : totalGoods);
-      if(balNum != null) ending = balNum; continue;
+    // ①.7 首行余额期初兜底：期初行无「余额」字样（如程序导出的总账「2024.12.31 | 760000」，
+    //    openingNote 只含日期）→ 首行仅余额列有值且无数量单价金额付款 → 为期初
+    if(opening == null && firstDataRow && !qty && !price && amtNum == null && payNum == null && balNum != null){
+      opening = balNum; openingNote = name || dateRaw || '期初'; firstDataRow = false;
+      continue;
     }
-    if(/总付款/.test(label)){
-      totalPay = payNum != null ? payNum : (amtNum != null ? amtNum : totalPay);
-      if(balNum != null) ending = balNum; continue;
-    }
-    if(/总退货/.test(label)){
-      totalRet = amtNum != null ? amtNum : (payNum != null ? payNum : totalRet);
-      if(balNum != null) ending = balNum; continue;
-    }
-    if(/应收余额/.test(label)){
-      receivable = balNum != null ? balNum : (amtNum != null ? amtNum : receivable);
-      if(balNum != null) ending = balNum; continue;
-    }
+    firstDataRow = false;
     // ② 退货行：名称含「退货/退款」，或名称是产品名（非 开票/刷卡/微信/现金/转账/税金/空）且付款列有值。
     //    总账的扣减列只有一列（index 7）：付款（开票/刷卡/微信/空名）与退货（产品名，如「退货长脚套」「铁头子脚套」）混在同一列
     if(/退货|退款/.test(name + '|' + note + '|' + amtRaw) ||
