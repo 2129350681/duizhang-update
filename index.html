@@ -200,8 +200,7 @@
       3. 「金额 = 数量 × 单价」自动计算，按月份自动出小计、按年份出总计；<br>
       4. 付款、退货同样录入；「总账」页自动汇总余额；<br>
       5. 点底部「导出 Excel」生成 .xlsx 文件，可直接发微信；「打印」可打印全部表单。<br>
-      <b>多客户</b>：顶部可「＋新建客户」切换账目（甲方默认「许道丰」，各客户互不影响）；<br>
-      <b>数据自动保存在本浏览器中，下次打开还在</b>（清浏览器缓存会丢失，重要数据请导出 Excel 备份）。
+      <b>多客户</b>：顶部可「＋新建客户」切换账目（甲方默认「许道丰」，各客户互不影响）。<br>
     </div>
   </details>
 
@@ -530,7 +529,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.70';
+const APP_VERSION = 'v2.71';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
