@@ -136,6 +136,7 @@
   .empty-tip { color: #99a; padding: 20px 0; text-align: center; font-size: 13px; }
   .actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e2e6ec; padding: 6px 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,.06); z-index: 50; }
   .actions button { padding: 5px 10px; font-size: 13px; border-radius: 6px; white-space: nowrap; }
+  .actions button:disabled { opacity: .4; cursor: default; }
   body.large-mode .actions { padding: 7px 8px; }
   body.large-mode .actions button { padding: 7px 12px; font-size: 14px; }
   details.help { margin-bottom: 12px; }
@@ -295,6 +296,7 @@
     <button id="importXlsx" title="导入 Excel 文件">📥 导入</button>
     <button id="exportXlsx" class="primary" title="导出 Excel 文件">⬇️ 导出</button>
     <button id="printBtn" title="打印对账单">🖨️ 打印</button>
+    <button id="undoBtn" title="恢复最近一次误删的行" disabled>↩️ 撤销</button>
     <button id="statsBtn" title="销售统计">📊 统计</button>
     <button id="checkUpdate" title="检查更新">🔄 更新</button>
     <button id="resetAll" class="danger" title="清空当前客户全部数据">🗑️ 清空</button>
@@ -528,7 +530,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.69';
+const APP_VERSION = 'v2.70';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1702,11 +1704,33 @@ function bindEditor(tableEl, rows, amountKey, onChange){
     if(!btn) return;
     const rows = currentRows();
     const i = rows.findIndex(x => x.id === btn.dataset.del);
-    if(i >= 0) rows.splice(i, 1);
+    if(i >= 0){
+      __undoDel = { rows, i, row: Object.assign({}, rows[i]) }; // 记住被删行与其位置，供底部「撤销」恢复
+      rows.splice(i, 1);
+    }
     save();
     renderEditor(rows, tableEl.__fields, tableEl.__amountKey, tableEl);
+    updateUndoBtn();
     onChange && onChange();
   });
+}
+/* —— 撤销误删：底部「↩️ 撤销」恢复最近一次被删的行 —— */
+let __undoDel = null;
+function updateUndoBtn(){
+  const b = document.getElementById('undoBtn');
+  if(!b) return;
+  b.disabled = !__undoDel;
+  b.title = __undoDel ? '恢复最近一次误删的行' : '暂无可撤销的删除';
+}
+function undoDelete(){
+  if(!__undoDel) return;
+  const u = __undoDel;
+  __undoDel = null;
+  u.rows.splice(Math.min(u.i, u.rows.length), 0, u.row); // 插回原位置（越界则追加）
+  save();
+  rerenderEditors();
+  renderAllPreviews();
+  updateUndoBtn();
 }
 function updatePreviewArea(html, el){
   el.innerHTML = html || '<div class="empty-tip">暂无数据</div>';
@@ -1980,6 +2004,8 @@ function setup(){
   pasteModal.addEventListener('click', e => { if(e.target === pasteModal) pasteModal.classList.remove('show'); });
   const statsModal = document.getElementById('statsModal');
   document.getElementById('statsBtn').addEventListener('click', openStats);
+  document.getElementById('undoBtn').addEventListener('click', undoDelete);
+  updateUndoBtn();
   document.getElementById('statsClose').addEventListener('click', () => statsModal.classList.remove('show'));
   statsModal.addEventListener('click', e => { if(e.target === statsModal) statsModal.classList.remove('show'); });
   document.getElementById('statsCust').addEventListener('change', statsSelCust);
