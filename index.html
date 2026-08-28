@@ -15,7 +15,16 @@
   .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 16px 18px; margin-bottom: 16px; }
   .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
   .customer-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: #f6f8fb; border: 1px solid #e3e8f0; border-radius: 8px; }
-  .customer-bar select { padding: 7px 8px; border: 1px solid #d4d9e0; border-radius: 6px; font-size: 14px; min-width: 130px; background: #fff; }
+  .customer-search { position: relative; flex: 1 1 170px; min-width: 150px; }
+  .customer-search input { width: 100%; padding: 7px 10px; border: 1px solid #d4d9e0; border-radius: 6px; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .customer-search input:focus { outline: none; border-color: #1f6feb; }
+  .customer-result { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 120; background: #fff; border: 1px solid #d4d9e0; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.14); max-height: 240px; overflow-y: auto; display: none; }
+  .customer-result.show { display: block; }
+  .customer-result .cr-item { padding: 9px 12px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f0f2f6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .customer-result .cr-item:last-child { border-bottom: none; }
+  .customer-result .cr-item:hover, .customer-result .cr-item.sel { background: #f2f7ff; }
+  .customer-result .cr-item .cr-no { color: #1a5fd0; margin-right: 6px; font-size: 12px; }
+  .customer-result .cr-empty { padding: 10px 12px; color: #99a; font-size: 13px; }
   .customer-bar button { padding: 7px 12px; border: 1px solid #d4d9e0; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
   .customer-bar button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
   .customer-bar button.danger { color: #d33; border-color: #ecc; }
@@ -53,6 +62,10 @@
   body.large-mode button { font-size: 16px; padding: 12px 18px; }
   body.large-mode .tabs button { font-size: 16px; padding: 13px 20px; }
   body.large-mode .customer-bar button { font-size: 15px; padding: 11px 14px; }
+  body.large-mode .customer-search input { font-size: 16px; padding: 11px 12px; }
+  body.large-mode .customer-result .cr-item { font-size: 16px; padding: 12px 14px; }
+  body.large-mode .customer-result .cr-item .cr-no { font-size: 13px; }
+  body.large-mode .customer-result .cr-empty { font-size: 15px; padding: 12px 14px; }
   body.large-mode .add-row-bottom { font-size: 18px; padding: 15px; }
   body.large-mode .toolbar .hint, body.large-mode #dataStatus { font-size: 14px; }
   body.large-mode main { margin-bottom: 150px; }
@@ -194,7 +207,10 @@
   <section class="card settings">
     <div class="customer-bar">
       <span class="customer-label">👥 当前客户（乙方）</span>
-      <select id="customerSelect" title="切换客户"></select>
+      <div class="customer-search">
+        <input id="customerSearch" type="text" placeholder="🔍 搜索客户：输入一个字自动跳出" autocomplete="off">
+        <div id="customerResultBox" class="customer-result"></div>
+      </div>
       <button id="addCustomerBtn" class="primary">＋ 新建客户</button>
       <button id="renameCustomerBtn">✏️ 重命名</button>
       <button id="deleteCustomerBtn" class="danger">🗑 删除</button>
@@ -512,7 +528,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.68';
+const APP_VERSION = 'v2.69';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1377,17 +1393,57 @@ function load(){
   }
   try { save(); } catch(e){}
 }
-/* —— 客户切换 —— */
+/* —— 客户切换（搜索式：输入一个字自动跳出包含该字的客户，点选切换） —— */
 function renderCustomerSelector(){
-  const sel = document.getElementById('customerSelect');
-  if(!sel) return;
-  sel.innerHTML = '';
-  for(const c of customerList()){
-    const opt = document.createElement('option');
-    opt.value = c.id; opt.textContent = (c.no ? c.no + ' ' : '') + customerDisplay(c);
-    sel.appendChild(opt);
+  const inp = document.getElementById('customerSearch');
+  if(!inp) return;
+  const c = currentCustomer();
+  inp.value = (c && c.no ? c.no + ' ' : '') + (c ? customerDisplay(c) : '');
+}
+function customerSearchBox(q){
+  const box = document.getElementById('customerResultBox');
+  if(!box) return;
+  const qq = String(q || '').trim().toLowerCase();
+  const all = customerList().filter(c => c.partyB);
+  const list = qq ? all.filter(c => customerDisplay(c).toLowerCase().includes(qq) || String(c.no || '').includes(qq)) : all;
+  if(!list.length){
+    box.innerHTML = `<div class="cr-empty">没有找到包含「${esc(q)}」的客户，可点「＋ 新建客户」</div>`;
+    box.classList.add('show');
+    return;
   }
-  sel.value = db.current;
+  box.innerHTML = list.map(c =>
+    `<div class="cr-item" data-cid="${c.id}" title="${esc(customerDisplay(c))}"><span class="cr-no">${c.no ? c.no + ' ' : ''}</span>${esc(customerDisplay(c))}</div>`
+  ).join('');
+  box.classList.add('show');
+}
+function hideCustomerSearch(){
+  const box = document.getElementById('customerResultBox');
+  if(box) box.classList.remove('show');
+}
+function bindCustomerSearch(){
+  const inp = document.getElementById('customerSearch');
+  const box = document.getElementById('customerResultBox');
+  if(!inp || !box) return;
+  inp.addEventListener('focus', () => customerSearchBox(inp.value));
+  inp.addEventListener('input', () => customerSearchBox(inp.value));
+  inp.addEventListener('keydown', e => {
+    if(e.key === 'Escape') hideCustomerSearch();
+    if(e.key === 'Enter'){
+      const first = box.querySelector('.cr-item');
+      if(first){ hideCustomerSearch(); selectCustomer(first.dataset.cid); renderCustomerSelector(); }
+    }
+  });
+  box.addEventListener('mousedown', e => e.preventDefault()); // 点选时不让 input 失焦先关闭
+  box.addEventListener('click', e => {
+    const item = e.target.closest('.cr-item[data-cid]');
+    if(!item) return;
+    hideCustomerSearch();
+    selectCustomer(item.dataset.cid);
+    renderCustomerSelector(); // 即使点击的是当前客户也恢复完整显示
+  });
+  document.addEventListener('click', e => {
+    if(!e.target.closest('.customer-search')) hideCustomerSearch();
+  });
 }
 function syncSettingsInputs(){
   ['partyA','partyB','opening','openingNote','cutoffNote'].forEach(id => {
@@ -1839,10 +1895,9 @@ function setup(){
       }
     }
   }
-  // 客户切换
+  // 客户切换（搜索式）
   renderCustomerSelector();
-  const selC = document.getElementById('customerSelect');
-  if(selC) selC.addEventListener('change', e => selectCustomer(e.target.value));
+  bindCustomerSearch();
   const addC = document.getElementById('addCustomerBtn'); if(addC) addC.addEventListener('click', addCustomerFlow);
   const renC = document.getElementById('renameCustomerBtn'); if(renC) renC.addEventListener('click', renameCustomerFlow);
   const delC = document.getElementById('deleteCustomerBtn'); if(delC) delC.addEventListener('click', deleteCustomerFlow);
