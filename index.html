@@ -368,6 +368,24 @@ function parseDateParts(s){
   if(!m) return null;
   return { y: +m[1], mo: m[2] ? +m[2] : null, d: m[3] ? +m[3] : null };
 }
+// 按日期升序原地排序（显示/导出统一用）：日期字符串转数值键（年*1e6+月*1e4+日*1e2），
+// 无日期/解析失败放最后（保持原相对顺序）。直接排序传入数组（state.goods 等），
+// 保证编辑表/预览/导出/打印看到的顺序一致。调用点：导入合并后、新增行后。
+function sortByDate(rows){
+  const key = (r) => {
+    const p = parseDateParts(r && r.date);
+    if(!p) return null;
+    return p.y * 1e6 + (p.mo || 0) * 1e4 + (p.d || 0) * 1e2;
+  };
+  rows.sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    if(ka == null && kb == null) return 0;
+    if(ka == null) return 1;
+    if(kb == null) return -1;
+    return ka - kb;
+  });
+  return rows;
+}
 /* ================= 销售统计 ================= */
 // 销售额 = 货款合计 − 退货合计（同一范围）；期初/付款不算（往来款）。
 // custs：客户数组（null=全部）；year：null=全部年份，否则只统计该年。
@@ -478,7 +496,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.62';
+const APP_VERSION = 'v2.63';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1259,6 +1277,11 @@ function load(){
   state = db.customers[db.current];
   try { mergeSeedCustomers(); } catch(e){}
   ensureCustomerNos(); // 给客户分配固定编号（已有编号不动）；load 后必跑一次并持久化，保证已有数据升级也出编号
+  // 存量数据按日期排好（导入/新增/粘贴都会排；这里兜底所有客户历史数据，打开即有序并持久化）
+  for(const id of Object.keys(db.customers)){
+    const c = db.customers[id];
+    try{ sortByDate(c.goods); sortByDate(c.payments); sortByDate(c.returns); }catch(_){}
+  }
   try { save(); } catch(e){}
 }
 /* —— 客户切换 —— */
@@ -1347,7 +1370,7 @@ function buildGoodsGroups(rows){
     groups.get(k).push(r);
   }
   const keys = [...groups.keys()].sort((a,b)=>(a==null?1e9:a)-(b==null?1e9:b));
-  return keys.map(k => ({ key: k, label: labelOf(k), rows: groups.get(k), subtotal: sumAmount(groups.get(k)) }));
+  return keys.map(k => ({ key: k, label: labelOf(k), rows: sortByDate(groups.get(k)), subtotal: sumAmount(groups.get(k)) }));
 }
 function sumAmount(rows){ return round2(rows.reduce((s,r)=>{ const a = rowAmount(r); return a == null ? s : s + a; }, 0)); }
 function sumPayments(rows){ return round2(rows.reduce((s,r)=>{ const a = toNum(r.amount); return a == null ? s : s + a; }, 0)); }
@@ -1425,6 +1448,7 @@ function syncEditorsFromDom(){
 function flushInputs(){ syncEditorsFromDom(); save(); }
 function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   syncEditorFromDom(rows, tableEl); // 渲染前先保住用户已输入但尚未写入 state 的值
+  sortByDate(rows); // 编辑表也按日期排好（导入/新增/粘贴/切换客户后重渲染即有序；输入过程中行不跳）
   if(balanceMap) tableEl.__balanceMap = balanceMap; // 删除行后重渲染沿用
   const bm = tableEl.__balanceMap;
   let html = '<thead><tr>';
@@ -1559,7 +1583,7 @@ function renderGoodsPreview(){
 
 /* ================= 付款预览 ================= */
 function renderPaymentsPreview(){
-  const rows = state.payments;
+  const rows = sortByDate(state.payments);
   const el = document.getElementById('paymentsPreview');
   if(!rows.length){ updatePreviewArea('', el); return; }
   let h = `<div class="sheet-title">${esc(state.partyB)}付给${esc(state.partyA)}的货款</div><table class="pv"><thead><tr><th>日期</th><th class="num">付款</th><th>备注</th><th class="num">累计付款</th></tr></thead><tbody>`;
@@ -1577,7 +1601,7 @@ function renderPaymentsPreview(){
 
 /* ================= 退货预览 ================= */
 function renderReturnsPreview(){
-  const rows = state.returns;
+  const rows = sortByDate(state.returns);
   const el = document.getElementById('returnsPreview');
   if(!rows.length){ updatePreviewArea('', el); return; }
   let h = `<div class="sheet-title">${esc(state.partyB)}退给${esc(state.partyA)}的货</div><table class="pv"><thead><tr><th>日期</th><th>名称及规格</th><th>单位</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th><th>备注</th></tr></thead><tbody>`;
@@ -1716,7 +1740,7 @@ function setup(){
   // 明细与总账联动：明细任何变化（输入/增行/清空）都同步刷新总账，防止「付款录进去总账不显示」
   const refreshGoodsAll = () => { renderGoodsPreview(); renderSummaryPreview(); };
   bindEditor(goodsEditor, state.goods, 'amount', refreshGoodsAll);
-  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); save(); renderGoodsEditor(); refreshGoodsAll(); focusLastRow(document.getElementById('goodsEditor')); });
+  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); sortByDate(state.goods); save(); renderGoodsEditor(); refreshGoodsAll(); focusLastRow(document.getElementById('goodsEditor')); });
   document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); refreshGoodsAll(); } });
 
   // 付款
@@ -1730,7 +1754,7 @@ function setup(){
   const renderPaymentsEditor = () => renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
   const refreshPaymentsAll = () => { renderPaymentsPreview(); renderSummaryPreview(); };
   bindEditor(paymentsEditor, state.payments, 'amount', refreshPaymentsAll);
-  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); save(); renderPaymentsEditor(); refreshPaymentsAll(); focusLastRow(document.getElementById('paymentsEditor')); });
+  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); sortByDate(state.payments); save(); renderPaymentsEditor(); refreshPaymentsAll(); focusLastRow(document.getElementById('paymentsEditor')); });
   document.getElementById('clearPayments').addEventListener('click', () => { if(confirm('确定清空所有付款记录？')){ state.payments = []; save(); renderPaymentsEditor(); refreshPaymentsAll(); } });
 
   // 退货
@@ -1747,7 +1771,7 @@ function setup(){
   const renderReturnsEditor = () => renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
   const refreshReturnsAll = () => { renderReturnsPreview(); renderSummaryPreview(); };
   bindEditor(returnsEditor, state.returns, 'amount', refreshReturnsAll);
-  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); save(); renderReturnsEditor(); refreshReturnsAll(); focusLastRow(document.getElementById('returnsEditor')); });
+  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); sortByDate(state.returns); save(); renderReturnsEditor(); refreshReturnsAll(); focusLastRow(document.getElementById('returnsEditor')); });
   document.getElementById('clearReturns').addEventListener('click', () => { if(confirm('确定清空所有退货记录？')){ state.returns = []; save(); renderReturnsEditor(); refreshReturnsAll(); } });
 
   // 批量粘贴
@@ -1793,6 +1817,7 @@ function setup(){
       }
       added++;
     }
+    sortByDate(state.goods); sortByDate(state.payments); sortByDate(state.returns); // 批量粘贴后按日期排好
     save();
     pasteModal.classList.remove('show');
     if(added) renderGoodsEditor(), renderPaymentsEditor(), renderReturnsEditor(), renderAllPreviews();
@@ -2693,6 +2718,7 @@ function mergeImport(parsed, mode){
     if(parsed.opening != null) state.opening = String(parsed.opening);
     if(parsed.openingNote) state.openingNote = parsed.openingNote;
     stats.goods = parsed.goods.length; stats.payments = parsed.payments.length; stats.returns = parsed.returns.length;
+    sortByDate(state.goods); sortByDate(state.payments); sortByDate(state.returns); // 导入后按日期排好
     return stats;
   }
   // 计数式去重：同一指纹在 state 中已有 n 条才算 n 条重复；文件内同款多行保留
@@ -2722,6 +2748,7 @@ function mergeImport(parsed, mode){
   }
   if(parsed.opening != null && !state.opening) state.opening = String(parsed.opening);
   if(parsed.openingNote && !state.openingNote) state.openingNote = parsed.openingNote;
+  sortByDate(state.goods); sortByDate(state.payments); sortByDate(state.returns); // 追加导入后按日期排好
   return stats;
 }
 function buildImportSummary(parsed){
@@ -3056,7 +3083,7 @@ function buildXlsxFiles(){
   {
     const rows = [];
     let cum = 0;
-    for(const r of state.payments){
+    for(const r of sortByDate(state.payments)){
       const a = toNum(r.amount); if(a != null) cum = round2(cum + a);
       rows.push([r.date || '', n(a), r.note || '', n(cum)]);
     }
@@ -3069,7 +3096,7 @@ function buildXlsxFiles(){
 
   // —— 退货 ——
   {
-    const rows = state.returns.map(r => [r.date || '', r.name || '', r.unit || '', n(toNum(r.qty)), n(toNum(r.price)), n(rowAmount(r)), r.note || '']);
+    const rows = sortByDate(state.returns).map(r => [r.date || '', r.name || '', r.unit || '', n(toNum(r.qty)), n(toNum(r.price)), n(rowAmount(r)), r.note || '']);
     rows.push(['退货共计', null, null, null, null, n(totalAll(state.returns)), null]);
     sheets.push({
       name: '退货',
