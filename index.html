@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.53';
+const APP_VERSION = 'v2.54';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -3114,8 +3114,19 @@ function mobileFallback(blob, fname){
         const n = AndroidBridge.saveXlsx(b64, fname);
         if (typeof n === 'number' && n > 0) {
           alert('已保存到手机「下载」文件夹：\n' + fname + '\n文件大小：' + n + ' 字节\n\n可用微信/WPS 打开查看。');
+        } else if (typeof n === 'number' && n === 0) {
+          alert('保存失败：文件内容为空');
         } else {
-          alert('保存失败：' + (typeof n === 'number' && n === 0 ? '文件内容为空' : '请检查手机存储空间') + '。');
+          // 读取原生端记录的具体失败原因（存储不足/目录不可用/IO 错误），给精确提示
+          let reason = '';
+          try {
+            if (window.AndroidBridge && typeof AndroidBridge.lastSaveError === 'function') reason = AndroidBridge.lastSaveError() || '';
+          } catch(_){}
+          if (reason) {
+            alert('保存到「下载」文件夹失败：' + reason + '\n\n建议：① 清理手机存储空间（微信缓存、照片、视频）后重试；\n② 点底部「🔄 更新」升级到最新版后再次导出（会自动改存到应用内部目录，不占公共空间）。');
+          } else {
+            alert('保存失败，请检查手机存储空间后重试。');
+          }
         }
       } catch(e){ alert('保存失败：' + e.message); }
     };
