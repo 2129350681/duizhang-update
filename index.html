@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.59';
+const APP_VERSION = 'v2.60';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2139,6 +2139,10 @@ function fixDateStr(raw, refDate){
 }
 function sheetHeaderRow(grid){
   for(const row of grid){
+    // 跳过标题行：合并单元格标题（如「许道丰与的货款（未标注日期）」）通常只有 1 个非空单元格，
+    // 且可能含「日期」「名称」等表头关键词（「未标注日期」含「日期」）→ 不能误当表头。表头至少 2 列。
+    const filled = (row || []).filter(c => c != null && String(c).trim() !== '');
+    if(filled.length < 2) continue;
     const joined = row.join('|');
     if(joined.includes('名称及规格') || joined.includes('品名') || joined.includes('名称') || joined.includes('日期')) return row;
   }
