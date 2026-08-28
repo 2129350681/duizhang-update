@@ -85,6 +85,19 @@
   .name-picker-grid button:hover { border-color: #1f6feb; background: #f2f7ff; }
   .name-picker-grid .np-price { display: block; font-size: 12px; color: #889; margin-top: 2px; }
   .name-picker-empty { text-align: center; color: #889; padding: 20px 0; font-size: 14px; }
+  /* 名称输入实时联想：输入时在输入框下方弹出包含该字的产品（按出现频率排），点选填入，也可继续自己写 */
+  .name-suggest { position: fixed; z-index: 300; background: #fff; border: 1px solid #d4d9e0; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.16); max-height: 46vh; overflow-y: auto; min-width: 200px; max-width: 340px; font-size: 13px; }
+  .name-suggest .ns-item { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f0f2f6; }
+  .name-suggest .ns-item:last-child { border-bottom: none; }
+  .name-suggest .ns-item:hover, .name-suggest .ns-item.sel { background: #f2f7ff; }
+  .name-suggest .ns-name { flex: 1; word-break: break-all; }
+  .name-suggest .ns-price { color: #1a5fd0; font-size: 12px; white-space: nowrap; }
+  .name-suggest .ns-count { color: #99a; font-size: 11px; white-space: nowrap; }
+  .name-suggest .ns-tip { padding: 9px 12px; color: #99a; font-size: 12px; }
+  body.large-mode .name-suggest { font-size: 16px; }
+  body.large-mode .name-suggest .ns-item { padding: 12px 14px; }
+  body.large-mode .name-suggest .ns-price { font-size: 14px; }
+  body.large-mode .name-suggest .ns-count { font-size: 12px; }
   table.editor { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
   table.editor th { background: #f2f5f9; padding: 8px 6px; text-align: left; border-bottom: 1px solid #d4d9e0; white-space: normal; word-break: break-all; font-weight: 600; }
   table.editor td { border-bottom: 1px solid #eef1f5; padding: 3px 4px; }
@@ -524,7 +537,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.66';
+const APP_VERSION = 'v2.67';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1102,6 +1115,83 @@ function nameLib(){
   return lib;
 }
 let __namePickerOnPick = null; // 选名称弹窗当前点选回调（供「新增产品」保存后重开弹窗复用）
+/* ================= 名称输入实时联想 =================
+   在「名称及规格」输入框打字时，下方弹出包含该字的产品（来自 nameLib：所有客户历史+内置产品库，
+   按出现频率从多到少排，同频率按拼音）。点选 → 填入名称并带出单价；继续打字 → 列表实时过滤；
+   不选继续输入也完全可以（联想只是辅助）。 */
+let __ns = null; // { box, input, row, onPick, keys, sel }
+function nameSuggestBox(){
+  if(__ns && __ns.box) return __ns.box;
+  const box = document.createElement('div');
+  box.className = 'name-suggest';
+  box.style.display = 'none';
+  document.body.appendChild(box);
+  if(!__ns) __ns = {};
+  __ns.box = box;
+  // 点选：mousedown 先于 blur 执行，避免输入框失焦导致联想先关
+  box.addEventListener('mousedown', e => e.preventDefault());
+  box.addEventListener('click', e => {
+    const item = e.target.closest('.ns-item[data-name]');
+    if(!item || !__ns) return;
+    const name = item.dataset.name, price = item.dataset.price || '';
+    nameSuggestHide();
+    if(__ns.onPick) __ns.onPick(name, price);
+  });
+  return box;
+}
+function nameSuggestShow(input, row, onPick){
+  const q = String(row.name || '').trim();
+  const box = nameSuggestBox();
+  if(!q){ nameSuggestHide(); return; }
+  const ql = q.toLowerCase();
+  const lib = nameLib();
+  const keys = Object.keys(lib)
+    .filter(k => k.includes(ql))
+    .sort((a, b) => (lib[b].count - lib[a].count) || a.localeCompare(b, 'zh'))
+    .slice(0, 12);
+  if(!keys.length){ nameSuggestHide(); return; }
+  __ns.input = input; __ns.row = row; __ns.onPick = onPick; __ns.keys = keys; __ns.sel = -1;
+  box.innerHTML = keys.map((k, i) => {
+    const e = lib[k];
+    return '<div class="ns-item" data-name="' + esc(e.name) + '" data-price="' + esc(e.price || '') + '" data-i="' + i + '">' +
+      '<span class="ns-name">' + esc(e.name) + '</span>' +
+      (e.price ? '<span class="ns-price">¥' + esc(e.price) + '</span>' : '') +
+      (e.count ? '<span class="ns-count">×' + e.count + '</span>' : '') +
+      '</div>';
+  }).join('') + '<div class="ns-tip">↑↓ 选择，Enter 确认；继续打字可自己输入</div>';
+  // 定位：输入框下方，窄屏贴左缘，避免超出屏幕
+  const r = input.getBoundingClientRect();
+  const bw = Math.min(340, Math.max(200, r.width));
+  let left = r.left;
+  if(left + bw > window.innerWidth - 8) left = Math.max(8, window.innerWidth - bw - 8);
+  box.style.left = left + 'px';
+  box.style.top = (r.bottom + 4) + 'px';
+  box.style.width = bw + 'px';
+  box.style.display = 'block';
+  box.scrollTop = 0;
+  // 滚动/缩放时关闭，避免定位错位
+  if(!__ns._onScroll){ __ns._onScroll = () => nameSuggestHide(); window.addEventListener('scroll', __ns._onScroll, true); }
+}
+function nameSuggestHide(){
+  if(!__ns || !__ns.box) return;
+  __ns.box.style.display = 'none';
+  if(__ns._onScroll){ window.removeEventListener('scroll', __ns._onScroll, true); __ns._onScroll = null; }
+}
+function nameSuggestPick(i){
+  if(!__ns || !__ns.keys || i < 0 || i >= __ns.keys.length) return;
+  const lib = nameLib();
+  const k = __ns.keys[i];
+  const e = lib[k];
+  nameSuggestHide();
+  if(__ns.onPick) __ns.onPick(e.name, e.price || '');
+}
+function nameSuggestMove(d){
+  if(!__ns || !__ns.keys || !__ns.box) return;
+  __ns.sel = Math.max(0, Math.min(__ns.keys.length - 1, __ns.sel + d));
+  [...__ns.box.querySelectorAll('.ns-item')].forEach((el, i) => el.classList.toggle('sel', i === __ns.sel));
+  const el = __ns.box.querySelector('.ns-item[data-i="' + __ns.sel + '"]');
+  if(el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest' });
+}
 /* 打开「选常用名称」弹窗：按出现频率从多到少排大按钮，搜索框输入一个字即时过滤，点选后回调 (name, price) */
 function openNamePicker(onPick){
   const modal = document.getElementById('namePickerModal');
@@ -1476,6 +1566,7 @@ function syncEditorsFromDom(){
 function flushInputs(){ syncEditorsFromDom(); save(); }
 function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   syncEditorFromDom(rows, tableEl); // 渲染前先保住用户已输入但尚未写入 state 的值
+  nameSuggestHide(); // 重渲染时关闭输入联想（避免残留定位错位的列表）
   sortByDate(rows); // 编辑表也按日期排好（导入/新增/粘贴/切换客户后重渲染即有序；输入过程中行不跳）
   if(balanceMap) tableEl.__balanceMap = balanceMap; // 删除行后重渲染沿用
   const bm = tableEl.__balanceMap;
@@ -1518,6 +1609,22 @@ function bindEditor(tableEl, rows, amountKey, onChange){
     if(!r) return;
     r[t.dataset.field] = t.value;
     if((t.dataset.field === 'qty' || t.dataset.field === 'price') && toNum(r.amt) != null){ r.amt = ''; } // 手动改数量/单价即解锁导入锁定的金额
+    // 名称输入实时联想：输入时弹出包含该字的产品（按出现频率排），点选填入并可带出单价；继续打字实时过滤
+    if(t.dataset.field === 'name'){
+      nameSuggestShow(t, r, (name, price) => {
+        r.name = name;
+        t.value = name;
+        if(price && !toNum(r.price)){ // 带出单价（仅当本行还没填单价）
+          r.price = price;
+          const pc = tableEl.querySelector('input[data-field="price"][data-id="' + r.id + '"]');
+          if(pc){ pc.value = price; }
+        }
+        save();
+        onChange && onChange();
+      });
+    } else {
+      nameSuggestHide();
+    }
     // 单价自动记忆：输入名称时若历史里有该名称的单价且本行未填 → 自动带出并跳到单价框（老年友好免重复打字；设置里可关）
     if(t.dataset.field === 'name' && r.name && !r.price){
       const hit = nameLib()[String(r.name).trim().toLowerCase()];
@@ -1545,6 +1652,20 @@ function bindEditor(tableEl, rows, amountKey, onChange){
   tableEl.addEventListener('change', handleFieldInput);
   tableEl.addEventListener('focusout', handleFieldInput);
   tableEl.addEventListener('keyup', handleFieldInput);
+  // 联想键盘导航：↑↓ 选择、Enter 确认、Esc 关闭（在 keyup 里拦截，避免误触发 handleFieldInput 已存值）
+  tableEl.addEventListener('keydown', e => {
+    if(e.key === 'ArrowDown'){ if(__ns && __ns.keys && __ns.box && __ns.box.style.display !== 'none'){ e.preventDefault(); nameSuggestMove(1); } }
+    else if(e.key === 'ArrowUp'){ if(__ns && __ns.keys && __ns.box && __ns.box.style.display !== 'none'){ e.preventDefault(); nameSuggestMove(-1); } }
+    else if(e.key === 'Enter'){ if(__ns && __ns.keys && __ns.box && __ns.box.style.display !== 'none'){ e.preventDefault(); nameSuggestPick(__ns.sel >= 0 ? __ns.sel : 0); } }
+    else if(e.key === 'Escape'){ nameSuggestHide(); }
+  });
+  // 输入框失焦（点到表格外/其他行）→ 关闭联想；mousedown preventDefault 保证点联想项时不触发这里
+  tableEl.addEventListener('focusout', e => {
+    const t = e.target;
+    if(t && t.dataset && t.dataset.field === 'name'){
+      setTimeout(() => { if(document.activeElement !== t) nameSuggestHide(); }, 120);
+    }
+  });
   tableEl.addEventListener('click', e => {
     const btn = e.target.closest('[data-del]');
     if(!btn) return;
