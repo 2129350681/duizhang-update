@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.55';
+const APP_VERSION = 'v2.56';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -3127,7 +3127,7 @@ function mobileFallback(blob, fname){
           if (reason) {
             alert('保存失败：' + reason + '\n\n建议：① 清理手机存储空间（微信缓存、照片、视频）后重试；\n② 点底部「🔄 更新」升级到最新版后再次导出（会自动打开系统保存框）。');
           } else {
-            alert('保存失败，请检查手机存储空间后重试。');
+            alert('保存失败，请检查手机存储空间后重试。（错误码：' + String(n) + '）');
           }
         }
       } catch(e){ alert('保存失败：' + e.message); }
