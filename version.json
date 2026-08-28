@@ -1,7 +1,7 @@
 {
-    "version":  "2.64",
-    "versionCode":  70,
-    "notes":  "①AI小助手升级：问「谁欠他的钱最多」「欠钱最多的是谁」「谁欠我钱最多」等，都会列出所有客户欠款并按从多到少排序（第一名就是欠得最多的），点名问某个人（如「房正伟欠多少」）仍只回答他一个人",
-    "apk":  "duizhang-2.64.apk",
-    "htmlSha256":  "1f360a743da86c2e02ee12d981ba7b9b0927b3d92d06de3762e90995019396d2"
+    "version":  "2.65",
+    "versionCode":  71,
+    "notes":  "",
+    "apk":  "duizhang-2.65.apk",
+    "htmlSha256":  "2de81b5709eb535cf862fe92bebe09a86d05a12ec5a4f1acfef911e8ad096d0b"
 }

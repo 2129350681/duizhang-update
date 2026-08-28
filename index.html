@@ -47,6 +47,9 @@
   body.large-mode table.editor { font-size: 16px; }
   body.large-mode table.editor th { font-size: 15px; padding: 10px 8px; }
   body.large-mode table.editor input { font-size: 17px; padding: 11px 8px; min-width: 92px; }
+  /* 日期列加宽（大字模式 17px 字号下 2025.11.2 约 100px 宽，保证不用横向拖动就能看全） */
+  table.editor th:first-child, table.editor td:first-child { min-width: 92px; }
+  body.large-mode table.editor th:first-child, body.large-mode table.editor td:first-child { min-width: 112px; }
   body.large-mode button { font-size: 16px; padding: 12px 18px; }
   body.large-mode .tabs button { font-size: 16px; padding: 13px 20px; }
   body.large-mode .customer-bar button { font-size: 15px; padding: 11px 14px; }
@@ -496,7 +499,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.64';
+const APP_VERSION = 'v2.65';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1415,7 +1418,7 @@ function balanceByIdMap(){
 
 /* ================= 编辑表格渲染 ================= */
 const G_FIELDS = [
-  { key:'date', label:'日期', ph:'2023.3.23', cls:'' },
+  { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
   { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
   { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
   { key:'qty', label:'数量', ph:'0', cls:'num' },
@@ -1745,7 +1748,7 @@ function setup(){
 
   // 付款
   const P_FIELDS = [
-    { key:'date', label:'日期', ph:'2023.1.8', cls:'' },
+    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'92px' },
     { key:'amount', label:'付款金额', ph:'0.00', cls:'num' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
@@ -1759,7 +1762,7 @@ function setup(){
 
   // 退货
   const R_FIELDS = [
-    { key:'date', label:'日期', ph:'2023.3.23', cls:'' },
+    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
     { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
     { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
     { key:'qty', label:'数量', ph:'0', cls:'num' },
@@ -3223,12 +3226,12 @@ window.__duizhangImportTest = async function(b64, mode){
   const stats = mergeImport(parsed, mode || 'append');
   save();
   const FIELDS_P = [
-    { key:'date', label:'日期', ph:'2023.1.8', cls:'' },
+    { key:'date', label:'日期', ph:'2023.1.8', cls:'', w:'92px' },
     { key:'amount', label:'付款金额', ph:'0.00', cls:'num' },
     { key:'note', label:'备注', ph:'选填', cls:'' },
   ];
   const FIELDS_R = [
-    { key:'date', label:'日期', ph:'2023.3.23', cls:'' },
+    { key:'date', label:'日期', ph:'2023.3.23', cls:'', w:'92px' },
     { key:'name', label:'名称及规格', ph:'名称及规格', cls:'' },
     { key:'unit', label:'单位', ph:'付', cls:'', w:'60px' },
     { key:'qty', label:'数量', ph:'0', cls:'num' },
