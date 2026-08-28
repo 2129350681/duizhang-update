@@ -11,7 +11,7 @@
   header h1 { font-size: 22px; margin-bottom: 6px; }
   .version-badge { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 9px; border-radius: 11px; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.55); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .5px; line-height: 1.5; }
   header p { font-size: 13px; opacity: .92; }
-  main { max-width: 1200px; margin: 18px auto 60px; padding: 0 16px; }
+  main { max-width: 1200px; margin: 18px auto 110px; padding: 0 16px; }
   .card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 16px 18px; margin-bottom: 16px; }
   .settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
   .customer-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; background: #f6f8fb; border: 1px solid #e3e8f0; border-radius: 8px; }
@@ -52,6 +52,7 @@
   body.large-mode .customer-bar button { font-size: 15px; padding: 11px 14px; }
   body.large-mode .add-row-bottom { font-size: 18px; padding: 15px; }
   body.large-mode .toolbar .hint, body.large-mode #dataStatus { font-size: 14px; }
+  body.large-mode main { margin-bottom: 150px; }
   body.large-mode .sheet-title { font-size: 19px; }
   body.large-mode table.pv { font-size: 15px; }
   body.large-mode table.pv th, body.large-mode table.pv td { padding: 8px 6px; }
@@ -104,7 +105,10 @@
   table.pv tr.year-total td { font-weight: 700; background: #fdeee0; }
   table.pv tr.sumhead td { background: #f2f5f9; font-weight: 600; text-align: center; }
   .empty-tip { color: #99a; padding: 20px 0; text-align: center; font-size: 13px; }
-  .actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e2e6ec; padding: 12px 16px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,.06); z-index: 50; }
+  .actions { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e2e6ec; padding: 6px 8px; display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; box-shadow: 0 -2px 10px rgba(0,0,0,.06); z-index: 50; }
+  .actions button { padding: 5px 10px; font-size: 13px; border-radius: 6px; white-space: nowrap; }
+  body.large-mode .actions { padding: 7px 8px; }
+  body.large-mode .actions button { padding: 7px 12px; font-size: 14px; }
   details.help { margin-bottom: 12px; }
   details.help summary { cursor: pointer; color: #1f6feb; font-size: 13px; padding: 4px 0; }
   details.help .help-body { font-size: 13px; color: #556; line-height: 1.8; padding: 8px 12px; background: #f7f9fc; border-radius: 8px; margin-top: 6px; }
@@ -256,12 +260,12 @@
     <button id="undoClose" style="padding:6px 10px;font-size:13px" aria-label="关闭">✕</button>
   </div>
   <div class="actions">
-    <button id="importXlsx">📥 导入 Excel (.xlsx)</button>
-    <button id="exportXlsx" class="primary">⬇️ 导出 Excel (.xlsx)</button>
-    <button id="printBtn">🖨️ 打印</button>
-    <button id="statsBtn">📊 统计</button>
-    <button id="checkUpdate">🔄 检查更新</button>
-    <button id="resetAll" class="danger">🗑️ 清空全部数据</button>
+    <button id="importXlsx" title="导入 Excel 文件">📥 导入</button>
+    <button id="exportXlsx" class="primary" title="导出 Excel 文件">⬇️ 导出</button>
+    <button id="printBtn" title="打印对账单">🖨️ 打印</button>
+    <button id="statsBtn" title="销售统计">📊 统计</button>
+    <button id="checkUpdate" title="检查更新">🔄 更新</button>
+    <button id="resetAll" class="danger" title="清空当前客户全部数据">🗑️ 清空</button>
     <input type="file" id="importFile" accept=".xlsx" style="display:none">
   </div>
 </main>
@@ -474,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.51';
+const APP_VERSION = 'v2.52';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1697,9 +1701,11 @@ function setup(){
   const goodsEditor = document.getElementById('goodsEditor');
   goodsEditor.__fields = G_FIELDS; goodsEditor.__amountKey = 'amount';
   const renderGoodsEditor = () => renderEditor(state.goods, G_FIELDS, 'amount', goodsEditor, balanceByIdMap());
-  bindEditor(goodsEditor, state.goods, 'amount', renderGoodsPreview);
-  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); save(); renderGoodsEditor(); renderGoodsPreview(); focusLastRow(document.getElementById('goodsEditor')); });
-  document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); renderGoodsPreview(); } });
+  // 明细与总账联动：明细任何变化（输入/增行/清空）都同步刷新总账，防止「付款录进去总账不显示」
+  const refreshGoodsAll = () => { renderGoodsPreview(); renderSummaryPreview(); };
+  bindEditor(goodsEditor, state.goods, 'amount', refreshGoodsAll);
+  document.getElementById('addGoods').addEventListener('click', () => { state.goods.push(defaultRow()); save(); renderGoodsEditor(); refreshGoodsAll(); focusLastRow(document.getElementById('goodsEditor')); });
+  document.getElementById('clearGoods').addEventListener('click', () => { if(confirm('确定清空所有货款明细？')){ state.goods = []; save(); renderGoodsEditor(); refreshGoodsAll(); } });
 
   // 付款
   const P_FIELDS = [
@@ -1710,9 +1716,10 @@ function setup(){
   const paymentsEditor = document.getElementById('paymentsEditor');
   paymentsEditor.__fields = P_FIELDS; paymentsEditor.__amountKey = 'amount';
   const renderPaymentsEditor = () => renderEditor(state.payments, P_FIELDS, 'amount', paymentsEditor);
-  bindEditor(paymentsEditor, state.payments, 'amount', renderPaymentsPreview);
-  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); save(); renderPaymentsEditor(); renderPaymentsPreview(); focusLastRow(document.getElementById('paymentsEditor')); });
-  document.getElementById('clearPayments').addEventListener('click', () => { if(confirm('确定清空所有付款记录？')){ state.payments = []; save(); renderPaymentsEditor(); renderPaymentsPreview(); } });
+  const refreshPaymentsAll = () => { renderPaymentsPreview(); renderSummaryPreview(); };
+  bindEditor(paymentsEditor, state.payments, 'amount', refreshPaymentsAll);
+  document.getElementById('addPayment').addEventListener('click', () => { state.payments.push(defaultPayment()); save(); renderPaymentsEditor(); refreshPaymentsAll(); focusLastRow(document.getElementById('paymentsEditor')); });
+  document.getElementById('clearPayments').addEventListener('click', () => { if(confirm('确定清空所有付款记录？')){ state.payments = []; save(); renderPaymentsEditor(); refreshPaymentsAll(); } });
 
   // 退货
   const R_FIELDS = [
@@ -1726,9 +1733,10 @@ function setup(){
   const returnsEditor = document.getElementById('returnsEditor');
   returnsEditor.__fields = R_FIELDS; returnsEditor.__amountKey = 'amount';
   const renderReturnsEditor = () => renderEditor(state.returns, R_FIELDS, 'amount', returnsEditor);
-  bindEditor(returnsEditor, state.returns, 'amount', renderReturnsPreview);
-  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); save(); renderReturnsEditor(); renderReturnsPreview(); focusLastRow(document.getElementById('returnsEditor')); });
-  document.getElementById('clearReturns').addEventListener('click', () => { if(confirm('确定清空所有退货记录？')){ state.returns = []; save(); renderReturnsEditor(); renderReturnsPreview(); } });
+  const refreshReturnsAll = () => { renderReturnsPreview(); renderSummaryPreview(); };
+  bindEditor(returnsEditor, state.returns, 'amount', refreshReturnsAll);
+  document.getElementById('addReturn').addEventListener('click', () => { state.returns.push(defaultReturn()); save(); renderReturnsEditor(); refreshReturnsAll(); focusLastRow(document.getElementById('returnsEditor')); });
+  document.getElementById('clearReturns').addEventListener('click', () => { if(confirm('确定清空所有退货记录？')){ state.returns = []; save(); renderReturnsEditor(); refreshReturnsAll(); } });
 
   // 批量粘贴
   let pasteTarget = 'goods';
