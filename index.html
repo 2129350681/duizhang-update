@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.52';
+const APP_VERSION = 'v2.53';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1102,6 +1102,7 @@ function openNamePicker(onPick){
 /* ================= 销售统计弹窗 ================= */
 let __statsMonth = null; // 当前钻取到的月份（null=只看年份/全部）
 function openStats(){
+  flushInputs(); // 统计基于最新输入
   const modal = document.getElementById('statsModal');
   const custSel = document.getElementById('statsCust');
   const yearSel = document.getElementById('statsYear');
@@ -1272,7 +1273,7 @@ function syncSettingsInputs(){
 }
 function selectCustomer(id){
   if(!db.customers[id] || id === db.current) return;
-  save();
+  flushInputs(); // 先保住当前客户刚输入但事件未派发的值，再切换
   db.current = id; state = db.customers[id];
   syncSettingsInputs(); renderCustomerSelector();
   rerenderEditors(); // 编辑器表格重渲染为当前客户的数据（防止残留旧客户表格）
@@ -1411,6 +1412,10 @@ function syncEditorsFromDom(){
   syncEditorFromDom(state.payments, document.getElementById('paymentsEditor'));
   syncEditorFromDom(state.returns, document.getElementById('returnsEditor'));
 }
+// 一键「保底保存」：先把表格 DOM 最新输入同步进 state 再落盘。
+// Android 软键盘 input 事件偶尔不派发，任何「读 state 生成产物/切换/落盘」的动作前必须调用，
+// 否则刚输入的内容会丢（导出缺行 / 切客户丢失 / 重开不见）。
+function flushInputs(){ syncEditorsFromDom(); save(); }
 function renderEditor(rows, fields, amountKey, tableEl, balanceMap){
   syncEditorFromDom(rows, tableEl); // 渲染前先保住用户已输入但尚未写入 state 的值
   if(balanceMap) tableEl.__balanceMap = balanceMap; // 删除行后重渲染沿用
@@ -1859,6 +1864,7 @@ function setup(){
   // 导出 / 打印 / 重置
   document.getElementById('exportXlsx').addEventListener('click', exportXlsx);
   document.getElementById('printBtn').addEventListener('click', () => {
+    flushInputs(); // 打印内容也取最新输入
     const area = document.getElementById('printArea');
     let h = '';
     h += '<html><head><meta charset="utf-8"><style>body{font-family:sans-serif;margin:10px}table{border-collapse:collapse;width:100%;margin-bottom:14px}th,td{border:1px solid #333;padding:4px 6px;font-size:12px}th{background:#eee}h1{font-size:18px;text-align:center;margin:4px 0}.num{text-align:right}.sheet-title{text-align:center;font-size:16px;font-weight:700;padding:10px 0 2px}.sheet-sub{text-align:center;font-size:12px;color:#555;padding-bottom:8px}table.pv{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px}table.pv th{background:#f2f5f9;border:1px solid #aab4c0;padding:6px 8px;font-weight:600;text-align:center}table.pv td{border:1px solid #aab4c0;padding:5px 8px}table.pv td.num,table.pv th.num{text-align:right}table.pv tr.subtotal td{font-weight:700;background:#f7f9fc}table.pv tr.year-total td{font-weight:700;background:#fdeee0}table.pv tr.sumhead td{background:#f2f5f9;font-weight:600;text-align:center}</style></head><body>';
@@ -1893,7 +1899,7 @@ function setup(){
   document.getElementById('checkUpdate').addEventListener('click', () => {
     if(window.AndroidBridge && typeof AndroidBridge.reloadRemote === 'function'){
       if(confirm('将重新从服务器拉取最新版本，当前输入会自动保存。确定？')){
-        save();
+        flushInputs(); // 更新前先落盘（软键盘事件未派发时 save() 会存旧值）
         AndroidBridge.reloadRemote();
       }
     } else {
@@ -3075,7 +3081,7 @@ function buildXlsxBytes(){
   return zipStore(files);
 }
 function exportXlsx(){
-  syncEditorsFromDom(); // 导出前把用户输入（含事件未派发的情况）同步进 state
+  flushInputs(); // 导出前同步 DOM 最新输入并落盘（保证导出的表含刚录入的数据，且重开不丢）
   const n1 = state.goods.length, n2 = state.payments.length, n3 = state.returns.length;
   if(n1 + n2 + n3 === 0){ alert('当前没有可导出的数据，请先录入货款/付款/退货。'); return; }
   const noDate = state.goods.filter(r => !parseDateParts(r.date)).length;
