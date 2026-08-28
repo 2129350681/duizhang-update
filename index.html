@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.61';
+const APP_VERSION = 'v2.62';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -2353,7 +2353,9 @@ function parsePaymentsSheet(grid, headerRow, idx){
     if(/总计|合计|累计/.test(date + '|' + row.join('|'))) continue;
     // 付款数据行必须日期列含 4 位年份（每笔付款都有日期）；日期列为残留数字/空 → 汇总行跳过
     //（如 ea92690e 付款表末行「0:'485' 2:'1394304'」= 总计行，日期列是残留单号）
-    if(!/^\d{4}[./年-]/.test(date)) continue;
+    // 年份后允许跟「整年/加工费」等文字（如「2022整年 13000 加工费」「2023年加工费 8992」也是真实付款）；
+    // 但纯残留数字（<1000 或无分隔符的杂数）不行
+    if(!/^\d{4}[./年-]/.test(date) && !/^(19|20)\d{2}(年|整年)/.test(date)) continue;
     // 付款值：优先付款列；表头与数据行列数错位（如表头「日期|空|空|付款|余额」数据行「日期|50000」）时，
     // 取日期列右侧第一个数字兜底
     let payNum = toNum(g(idx.pay));
@@ -2523,13 +2525,27 @@ async function parseImportXlsx(bytes){
   // 账期跳过基准年 opYear：期初注释带年份时，标题年份 ≤ opYear 的明细账期表其数据已含在期初中，跳过（防重复计入）
   // 语义区分：期初为「Y年底/余额」（如「2024年余额」「2024年底」）→ 含 Y 全年 → 跳 ≤ Y；
   //          期初为「Y年M月」（如「2024.1月」「2024年1月」）→ 只含 Y 年之前的账期 → 跳 < Y（主表年份=Y 保留）
+  //          期初为纯数字日期「Y.M.D」（如「2026.1.14」「2021.2.1」「2024.12.31」）→ 只是时点标注，
+  //          不触发账期跳过（主表当年业务全算）——⚠ 程序自导出文件按年份拆表（行日期 2025 的 C085 会
+  //          被拆进「2025年货款」表），若纯日期期初也跳 ≤Y 会把主表年份内的跨年行误丢（曾致肖圣朴
+  //          「2026.1.28」期初重导入丢 C085 5600、彭飞「2026.1.14」期初丢 2026 货款 29 行）
   let opYear = null;
   if(result.openingNote){
     const ym = /(19|20)\d{2}/.exec(result.openingNote);
     if(ym){
       const Y = parseInt(ym[0], 10);
-      if(/(20\d{2})[.\-\/年]\s*\d{1,2}\s*月/.test(result.openingNote)) opYear = Y - 1;
-      else opYear = Y;
+      const isPlainDate = /^(?:19|20)\d{2}[.\-\/]\d{1,2}(?:[.\-\/]\d{1,2})?$/.test(result.openingNote.trim());
+      if(!isPlainDate){
+        const dm = /(?:19|20)\d{2}[.\-\/年](\d{1,2})(?:[.\-\/月](\d{1,2})月?)?/.exec(result.openingNote);
+        if(dm){
+          const Mo = parseInt(dm[1], 10);
+          const D = dm[2] ? parseInt(dm[2], 10) : null;
+          if(Mo === 12 && (D == null || D >= 30)) opYear = Y; // 12月/12.30/12.31 → 年底，含全年
+          else opYear = Y - 1;                               // 年初/月中时点 → 只含之前账期
+        } else {
+          opYear = Y; // 无具体月日（「Y年余额/Y年底/结余/上年」）→ 含 Y 全年
+        }
+      }
     }
   }
   for(const it of scan){
