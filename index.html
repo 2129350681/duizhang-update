@@ -478,7 +478,7 @@ function rowAmount(r){
 }
 
 /* ================= 状态 ================= */
-const APP_VERSION = 'v2.56';
+const APP_VERSION = 'v2.57';
 const LS_KEY = 'duizhang-generator-v1';
 const DEFAULT_PARTY_A = '许道丰'; // 新建客户时甲方默认值
 // 多客户容器：localStorage 存 { v:2, current:客户id, customers:{ id: 客户state } }
@@ -1198,7 +1198,14 @@ function updateDataStatus(){
   if(!el) return;
   el.textContent = '对账单 ' + APP_VERSION + ' ｜ 客户：' + customerDisplay(currentCustomer()) + ' ｜ 已记录：货款 ' + state.goods.length + ' 笔 ｜ 付款 ' + state.payments.length + ' 笔 ｜ 退货 ' + state.returns.length + ' 笔' + (state.opening ? ' ｜ 期初 ' + state.opening : '');
   const badge = document.getElementById('appVersionBadge');
-  if(badge) badge.textContent = APP_VERSION; // 标题旁常驻版本徽章（每次发新版只需改 APP_VERSION）
+  if(badge){
+    // 标题旁常驻版本徽章（每次发新版只需改 APP_VERSION）；App 内加显「程序」版本，区分内容/程序层
+    let apkV = '';
+    try {
+      if(window.AndroidBridge && typeof AndroidBridge.apkVersion === 'function') apkV = AndroidBridge.apkVersion();
+    } catch(_){}
+    badge.textContent = apkV ? (APP_VERSION + ' · 程序' + apkV) : APP_VERSION;
+  }
 }
 function defaultPayment(){ return { id: uid(), date:'', amount:'', note:'' }; }
 function defaultReturn(){ return { id: uid(), date:'', name:'', qty:'', price:'', unit:'付', note:'' }; }
